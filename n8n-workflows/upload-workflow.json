@@ -1,0 +1,292 @@
+{
+  "name": "Legal Document Upload",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "upload",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-upload",
+      "name": "Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "upload-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.file.type }}",
+              "operation": "contains",
+              "value2": "text/plain"
+            }
+          ]
+        }
+      },
+      "id": "if-txt",
+      "name": "Is TXT File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.file.type }}",
+              "operation": "contains",
+              "value2": "application/pdf"
+            }
+          ]
+        }
+      },
+      "id": "if-pdf",
+      "name": "Is PDF File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.file.type }}",
+              "operation": "contains",
+              "value2": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            }
+          ]
+        }
+      },
+      "id": "if-docx",
+      "name": "Is DOCX File?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract text from TXT file\nconst file = $input.first().json.file;\nconst buffer = Buffer.from(file.data, 'base64');\nconst text = buffer.toString('utf-8');\n\nreturn {\n  json: {\n    text: text,\n    title: $input.first().json.title,\n    filename: file.name\n  }\n};"
+      },
+      "id": "extract-txt",
+      "name": "Extract TXT Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract text from PDF file\nconst file = $input.first().json.file;\nconst buffer = Buffer.from(file.data, 'base64');\n\n// Note: This is a simplified version. In real implementation,\n// you would use a PDF parsing library like pdf-parse\nconst text = 'PDF content extraction would go here';\n\nreturn {\n  json: {\n    text: text,\n    title: $input.first().json.title,\n    filename: file.name\n  }\n};"
+      },
+      "id": "extract-pdf",
+      "name": "Extract PDF Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract text from DOCX file\nconst file = $input.first().json.file;\nconst buffer = Buffer.from(file.data, 'base64');\n\n// Note: This is a simplified version. In real implementation,\n// you would use a library like mammoth\nconst text = 'DOCX content extraction would go here';\n\nreturn {\n  json: {\n    text: text,\n    title: $input.first().json.title,\n    filename: file.name\n  }\n};"
+      },
+      "id": "extract-docx",
+      "name": "Extract DOCX Text",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Split text into chunks\nconst text = $input.first().json.text;\nconst title = $input.first().json.title;\nconst filename = $input.first().json.filename;\n\n// Split by sentences\nconst sentences = text.split(/(?<=[.?!])\\s+/);\nconst chunks = [];\nlet currentChunk = '';\n\nfor (const sentence of sentences) {\n  if ((currentChunk + ' ' + sentence).length < 1000) {\n    currentChunk += (currentChunk ? ' ' : '') + sentence;\n  } else {\n    chunks.push(currentChunk.trim());\n    currentChunk = sentence;\n  }\n}\nif (currentChunk) {\n  chunks.push(currentChunk.trim());\n}\n\n// Extract article reference\nfunction extractArticleReference(text) {\n  const regex = /(Điều\\s+\\d+(\\s+\\w+)?(\\s+và\\s+\\d+)?(\\s+đến\\s+\\d+)?(\\s+của\\s+Luật\\s+[\\w\\s]+)?)|(Khoản\\s+\\d+(\\s+\\w+)?(\\s+của\\s+Điều\\s+\\d+)?)/g;\n  const match = text.match(regex);\n  return match ? match.join('; ') : null;\n}\n\n// Create items for each chunk\nconst items = chunks.map((chunk, index) => ({\n  json: {\n    title: title,\n    article_reference: extractArticleReference(chunk),\n    source: filename,\n    content: chunk,\n    chunk_index: index\n  }\n}));\n\nreturn items;"
+      },
+      "id": "split-chunks",
+      "name": "Split into Chunks",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "embed",
+        "model": "text-embedding-3-small",
+        "input": "={{ $json.content }}"
+      },
+      "id": "create-embedding",
+      "name": "Create Embedding",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare data for Supabase\nconst content = $input.first().json.content;\nconst embedding = $input.first().json.embedding;\nconst title = $input.first().json.title;\nconst article_reference = $input.first().json.article_reference;\nconst source = $input.first().json.source;\n\nreturn {\n  json: {\n    title: title,\n    article_reference: article_reference,\n    source: source,\n    content: content,\n    embedding: embedding\n  }\n};"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "laws",
+        "columns": "title, article_reference, source, content, embedding"
+      },
+      "id": "save-to-supabase",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"File processed successfully\", \"processedChunks\": $input.all().length } }}"
+      },
+      "id": "response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1780, 300]
+    }
+  ],
+  "connections": {
+    "Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is TXT File?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is PDF File?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Is DOCX File?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is TXT File?": {
+      "main": [
+        [
+          {
+            "node": "Extract TXT Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is PDF File?": {
+      "main": [
+        [
+          {
+            "node": "Extract PDF Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is DOCX File?": {
+      "main": [
+        [
+          {
+            "node": "Extract DOCX Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract TXT Text": {
+      "main": [
+        [
+          {
+            "node": "Split into Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract PDF Text": {
+      "main": [
+        [
+          {
+            "node": "Split into Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract DOCX Text": {
+      "main": [
+        [
+          {
+            "node": "Split into Chunks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split into Chunks": {
+      "main": [
+        [
+          {
+            "node": "Create Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Embedding": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
