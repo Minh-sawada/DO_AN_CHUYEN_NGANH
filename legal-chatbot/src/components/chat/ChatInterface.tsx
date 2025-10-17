@@ -193,8 +193,9 @@ export function ChatInterface() {
     }
 
     try {
-      // Gửi đến n8n webhook
-      const webhookUrl = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK || 'https://trangiabao123.app.n8n.cloud/webhook/chat-new'
+      
+      //const webhookUrl = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK || 'https://trangiabao123.app.n8n.cloud/webhook/chat-new'
+      const webhookUrl = 'http://localhost:5678/webhook/chat-new'
       console.log('Sending request to:', webhookUrl)
       
       const response = await fetch(webhookUrl, {
