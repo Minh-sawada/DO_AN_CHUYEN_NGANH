@@ -19,8 +19,8 @@ interface Message {
   sources?: Array<{
     id: number
     title: string
-    article_reference: string
-    source: string
+    so_hieu: string
+    link: string
   }>
   timestamp: Date
   isTyping?: boolean
@@ -36,9 +36,9 @@ interface LawDetail {
   id: number
   title: string
   content: string
-  article_reference?: string
-  source?: string
-  created_at: string
+  so_hieu?: string 
+  link?: string
+  updated_at: string // Đổi 'created_at' thành 'updated_at'
 }
 
 export function ChatInterface() {
@@ -193,9 +193,10 @@ export function ChatInterface() {
     }
 
     try {
-      
+      // Gửi đến n8n webhook
+      //http://localhost:5678/webhook-test/chat-new
       //const webhookUrl = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK || 'https://trangiabao123.app.n8n.cloud/webhook/chat-new'
-      const webhookUrl = 'http://localhost:5678/webhook/chat-new'
+      const webhookUrl = 'http://localhost:5678/webhook-test/chat-new'
       console.log('Sending request to:', webhookUrl)
       
       const response = await fetch(webhookUrl, {
@@ -334,7 +335,7 @@ export function ChatInterface() {
         )}
         
         <div className={`max-w-[80%] ${isUser ? 'order-first' : ''}`}>
-          <div className={`rounded-2xl px-4 py-3 break-words ${
+          <div className={`rounded-2xl px-4 py-3 overflow-x-auto ${
             isUser 
               ? 'bg-blue-600 text-white ml-auto' 
               : 'bg-gray-100 text-gray-900'
@@ -346,7 +347,7 @@ export function ChatInterface() {
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="text-sm whitespace-pre">{message.content}</p>
                 
                 {!isUser && message.sources && message.sources.length > 0 && showSources && (
                   <div className="mt-3 space-y-2">
@@ -374,22 +375,22 @@ export function ChatInterface() {
                                   <BookOpen className="h-3 w-3 mt-0.5 text-blue-500 shrink-0" />
                                   <div className="min-w-0 flex-1">
                                     <p className="font-medium text-gray-800 truncate">{source.title}</p>
-                                    {source.article_reference && (
-                                      <p className="text-blue-600 mt-1">{source.article_reference}</p>
+                                    {source.so_hieu && (
+                                      <p className="text-blue-600 mt-1">{source.so_hieu}</p>
                                     )}
                                     <p className="text-gray-500 mt-1">
-                                      {source.source && source.source.startsWith('http') ? (
+                                      {source.link && source.link.startsWith('http') ? (
                                         <a 
-                                          href={source.source} 
+                                          href={source.link} 
                                           target="_blank" 
                                           rel="noopener noreferrer"
                                           className="text-blue-600 hover:text-blue-800 underline"
                                           onClick={(e) => e.stopPropagation()}
                                         >
-                                          {source.source}
+                                          {source.link}
                                         </a>
                                       ) : (
-                                        source.source
+                                        source.link
                                       )}
                                     </p>
                                   </div>
@@ -529,7 +530,7 @@ export function ChatInterface() {
       </CardHeader>
 
       {/* Messages Area */}
-      <CardContent className="flex-1 p-0 overflow-hidden">
+      <CardContent className="flex-1 p-0 overflow-auto">
         <ScrollArea ref={scrollAreaRef} className="h-full px-6">
           <div className="space-y-4 pb-4">
             {messages.length === 0 ? (
@@ -661,29 +662,29 @@ export function ChatInterface() {
                 <h3 className="font-semibold text-lg text-gray-900 mb-2">
                   {selectedSource.title}
                 </h3>
-                {selectedSource.article_reference && (
+                {selectedSource.so_hieu && (
                   <p className="text-blue-700 font-medium">
-                    {selectedSource.article_reference}
+                    {selectedSource.so_hieu}
                   </p>
                 )}
-                {selectedSource.source && (
+                {selectedSource.link && (
                   <p className="text-gray-600 text-sm mt-1">
-                    Nguồn: {selectedSource.source.startsWith('http') ? (
+                    Nguồn: {selectedSource.link.startsWith('http') ? (
                       <a 
-                        href={selectedSource.source} 
+                        href={selectedSource.link} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-blue-600 hover:text-blue-800 underline"
                       >
-                        {selectedSource.source}
+                        {selectedSource.link}
                       </a>
                     ) : (
-                      selectedSource.source
+                      selectedSource.link
                     )}
                   </p>
                 )}
                 <p className="text-gray-500 text-xs mt-2">
-                  Cập nhật: {new Date(selectedSource.created_at).toLocaleDateString('vi-VN')}
+                  Cập nhật: {new Date(selectedSource.updated_at).toLocaleDateString('vi-VN')}
                 </p>
               </div>
 

@@ -23,55 +23,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Get initial session
-    console.log('AuthProvider mounted')
     const getInitialSession = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession()
-        console.log('Initial session:', session)
-        setSession(session)
-        setUser(session?.user ?? null)
-
-        if (session?.user) {
-          await fetchProfile(session.user.id)
-        }
-      } catch (error) {
-        console.error('Error getting initial session:', error)
-      } finally {
-        setLoading(false)
-        console.log('Loading finished after initial session')
+      const { data: { session } } = await supabase.auth.getSession()
+      setSession(session)
+      setUser(session?.user ?? null)
+      
+      if (session?.user) {
+        await fetchProfile(session.user.id)
       }
-    }
-
-    // Add timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      console.log('AuthProvider timeout - setting loading to false')
+      
       setLoading(false)
-    }, 3000) // 3 second timeout
+    }
 
     getInitialSession()
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session)
         setSession(session)
         setUser(session?.user ?? null)
-
+        
         if (session?.user) {
           await fetchProfile(session.user.id)
         } else {
           setProfile(null)
         }
-
+        
         setLoading(false)
-        console.log('Loading finished after auth state change')
       }
     )
 
-    return () => {
-      clearTimeout(timeout)
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   const fetchProfile = async (userId: string) => {
@@ -85,7 +67,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('Error fetching profile:', error)
       } else {
-        console.log('Fetched profile:', data)
         setProfile(data)
       }
     } catch (error) {
@@ -94,23 +75,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    try {
-      setLoading(true)
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.error('Error signing out:', error)
-        throw error
-      }
-      // Clear local state
-      setUser(null)
-      setProfile(null)
-      setSession(null)
-    } catch (error) {
-      console.error('Sign out error:', error)
-      throw error
-    } finally {
-      setLoading(false)
-    }
+    await supabase.auth.signOut()
   }
 
   const value = {
