@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS laws (
     tom_tat TEXT,                -- Tóm tắt văn bản
     tom_tat_html TEXT,           -- Tóm tắt định dạng HTML
     van_ban_duoc_dan TEXT,       -- Văn bản được dẫn chiếu
-    embedding VECTOR(1536),       -- Vector embedding cho tìm kiếm ngữ nghĩa
+    embedding VECTOR(768),       -- Vector embedding cho tìm kiếm ngữ nghĩa
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

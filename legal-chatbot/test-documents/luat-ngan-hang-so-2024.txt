@@ -1,0 +1,162 @@
+NGÂN HÀNG NHÀ NƯỚC VIỆT NAM
+CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+Độc lập - Tự do - Hạnh phúc
+
+Số: 30/2024/TT-NHNN
+Hà Nội, ngày 25 tháng 5 năm 2024
+
+THÔNG TƯ
+QUY ĐỊNH VỀ NGÂN HÀNG SỐ VÀ DỊCH VỤ TÀI CHÍNH ĐIỆN TỬ
+
+Căn cứ Luật Ngân hàng Nhà nước Việt Nam số 46/2010/QH12;
+Căn cứ Luật Các tổ chức tín dụng số 47/2010/QH12;
+Căn cứ Luật Giao dịch điện tử số 51/2005/QH11;
+Căn cứ Nghị định số 01/2021/NĐ-CP ngày 06 tháng 01 năm 2021 của Chính phủ quy định chức năng, nhiệm vụ, quyền hạn và cơ cấu tổ chức của Ngân hàng Nhà nước Việt Nam;
+Theo đề nghị của Thống đốc Ngân hàng Nhà nước Việt Nam;
+
+Điều 1. Phạm vi điều chỉnh
+
+Thông tư này quy định về:
+1. Hoạt động ngân hàng số;
+2. Dịch vụ tài chính điện tử;
+3. Bảo mật và an toàn thông tin;
+4. Quản lý rủi ro công nghệ;
+5. Điều kiện cấp phép và hoạt động.
+
+Điều 2. Đối tượng áp dụng
+
+Thông tư này áp dụng đối với:
+1. Các tổ chức tín dụng cung cấp dịch vụ ngân hàng số;
+2. Các tổ chức cung cấp dịch vụ tài chính điện tử;
+3. Các đối tác công nghệ của tổ chức tín dụng.
+
+Điều 3. Giải thích từ ngữ
+
+1. Ngân hàng số là mô hình ngân hàng cung cấp dịch vụ tài chính hoàn toàn thông qua các kênh điện tử, không có chi nhánh vật lý truyền thống.
+
+2. Dịch vụ tài chính điện tử bao gồm:
+   a) Thanh toán điện tử;
+   b) Chuyển tiền điện tử;
+   c) Tín dụng điện tử;
+   d) Bảo hiểm điện tử;
+   e) Đầu tư điện tử.
+
+3. Fintech là công nghệ tài chính ứng dụng công nghệ thông tin để cung cấp dịch vụ tài chính.
+
+Điều 4. Điều kiện cấp phép ngân hàng số
+
+1. Tổ chức tín dụng muốn cung cấp dịch vụ ngân hàng số phải đáp ứng các điều kiện:
+   a) Có giấy phép hoạt động ngân hàng hợp lệ;
+   b) Có vốn điều lệ tối thiểu 3.000 tỷ đồng;
+   c) Có hệ thống công nghệ thông tin đạt chuẩn quốc tế;
+   d) Có đội ngũ chuyên gia công nghệ và tài chính;
+   e) Có kế hoạch kinh doanh ngân hàng số khả thi.
+
+2. Hồ sơ đăng ký cấp phép bao gồm:
+   a) Đơn đăng ký cấp phép;
+   b) Kế hoạch kinh doanh ngân hàng số;
+   c) Báo cáo đánh giá rủi ro công nghệ;
+   d) Chứng nhận an toàn thông tin;
+   e) Danh sách đội ngũ quản lý và chuyên gia.
+
+Điều 5. Dịch vụ ngân hàng số
+
+1. Các dịch vụ ngân hàng số bao gồm:
+   a) Mở tài khoản điện tử;
+   b) Gửi tiền và rút tiền điện tử;
+   c) Chuyển tiền điện tử;
+   d) Thanh toán hóa đơn điện tử;
+   e) Vay tiền điện tử;
+   f) Đầu tư tài chính điện tử.
+
+2. Nguyên tắc cung cấp dịch vụ:
+   a) Đảm bảo an toàn và bảo mật;
+   b) Thuận tiện và nhanh chóng;
+   c) Minh bạch và công khai;
+   d) Tuân thủ pháp luật.
+
+Điều 6. Bảo mật và an toàn thông tin
+
+1. Tổ chức tín dụng phải đảm bảo:
+   a) Mã hóa dữ liệu khách hàng;
+   b) Xác thực đa yếu tố;
+   c) Giám sát giao dịch thời gian thực;
+   d) Sao lưu dữ liệu định kỳ;
+   e) Cập nhật bảo mật thường xuyên.
+
+2. Tiêu chuẩn bảo mật:
+   a) Tuân thủ tiêu chuẩn ISO 27001;
+   b) Đạt chứng nhận PCI DSS;
+   c) Thực hiện kiểm tra bảo mật định kỳ;
+   d) Có kế hoạch ứng phó sự cố.
+
+Điều 7. Quản lý rủi ro công nghệ
+
+1. Các loại rủi ro công nghệ:
+   a) Rủi ro bảo mật;
+   b) Rủi ro hệ thống;
+   c) Rủi ro dữ liệu;
+   d) Rủi ro vận hành;
+   e) Rủi ro tuân thủ.
+
+2. Biện pháp quản lý rủi ro:
+   a) Đánh giá rủi ro định kỳ;
+   b) Xây dựng kế hoạch ứng phó;
+   c) Đào tạo nhân viên;
+   d) Kiểm tra và giám sát;
+   e) Bảo hiểm rủi ro công nghệ.
+
+Điều 8. Bảo vệ khách hàng
+
+1. Tổ chức tín dụng phải:
+   a) Cung cấp thông tin đầy đủ về dịch vụ;
+   b) Hướng dẫn sử dụng dịch vụ;
+   c) Hỗ trợ khách hàng 24/7;
+   d) Bồi thường thiệt hại do lỗi hệ thống;
+   e) Bảo vệ thông tin cá nhân khách hàng.
+
+2. Quyền của khách hàng:
+   a) Được bảo mật thông tin;
+   b) Được hỗ trợ khi gặp sự cố;
+   c) Được bồi thường thiệt hại;
+   d) Được khiếu nại và giải quyết tranh chấp.
+
+Điều 9. Báo cáo và giám sát
+
+1. Tổ chức tín dụng phải báo cáo:
+   a) Tình hình hoạt động ngân hàng số hàng quý;
+   b) Sự cố bảo mật trong vòng 24 giờ;
+   c) Thay đổi hệ thống công nghệ;
+   d) Kết quả kiểm tra bảo mật.
+
+2. Ngân hàng Nhà nước thực hiện giám sát:
+   a) Giám sát từ xa thông qua báo cáo;
+   b) Thanh tra, kiểm tra tại chỗ;
+   c) Yêu cầu cung cấp thông tin;
+   d) Đánh giá rủi ro định kỳ.
+
+Điều 10. Xử lý vi phạm
+
+1. Tổ chức tín dụng vi phạm các quy định của Thông tư này sẽ bị xử lý:
+   a) Cảnh báo;
+   b) Phạt tiền từ 50 triệu đến 500 triệu đồng;
+   c) Tạm đình chỉ hoạt động ngân hàng số;
+   d) Thu hồi giấy phép.
+
+2. Cá nhân vi phạm có thể bị xử lý hình sự nếu gây thiệt hại nghiêm trọng.
+
+Điều 11. Hiệu lực thi hành
+
+Thông tư này có hiệu lực thi hành kể từ ngày 01 tháng 7 năm 2024.
+
+Thông tư này thay thế Thông tư số 25/2020/TT-NHNN ngày 30 tháng 9 năm 2020.
+
+Điều 12. Tổ chức thực hiện
+
+1. Thống đốc Ngân hàng Nhà nước Việt Nam chịu trách nhiệm tổ chức thực hiện Thông tư này.
+
+2. Các tổ chức tín dụng có trách nhiệm thực hiện đầy đủ các quy định của Thông tư này.
+
+KT. THỐNG ĐỐC
+PHÓ THỐNG ĐỐC
+Lê Văn Thành

@@ -1,0 +1,191 @@
+NGÂN HÀNG NHÀ NƯỚC VIỆT NAM
+CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+Độc lập - Tự do - Hạnh phúc
+
+Số: 35/2024/TT-NHNN
+Hà Nội, ngày 10 tháng 6 năm 2024
+
+THÔNG TƯ
+QUY ĐỊNH VỀ QUẢN LÝ RỦI RO TÀI CHÍNH TRONG HOẠT ĐỘNG NGÂN HÀNG
+
+Căn cứ Luật Ngân hàng Nhà nước Việt Nam số 46/2010/QH12;
+Căn cứ Luật Các tổ chức tín dụng số 47/2010/QH12;
+Căn cứ Nghị định số 01/2021/NĐ-CP ngày 06 tháng 01 năm 2021 của Chính phủ quy định chức năng, nhiệm vụ, quyền hạn và cơ cấu tổ chức của Ngân hàng Nhà nước Việt Nam;
+Theo đề nghị của Thống đốc Ngân hàng Nhà nước Việt Nam;
+
+Điều 1. Phạm vi điều chỉnh
+
+Thông tư này quy định về:
+1. Quản lý rủi ro tài chính trong hoạt động ngân hàng;
+2. Hệ thống quản lý rủi ro;
+3. Đo lường và giám sát rủi ro;
+4. Báo cáo rủi ro và ứng phó sự cố;
+5. Điều kiện và tiêu chuẩn quản lý rủi ro.
+
+Điều 2. Đối tượng áp dụng
+
+Thông tư này áp dụng đối với:
+1. Các tổ chức tín dụng được phép hoạt động ngân hàng tại Việt Nam;
+2. Chi nhánh ngân hàng nước ngoài tại Việt Nam;
+3. Các tổ chức cung cấp dịch vụ tài chính ngân hàng.
+
+Điều 3. Giải thích từ ngữ
+
+1. Rủi ro tài chính là khả năng xảy ra tổn thất về tài chính do các yếu tố:
+   a) Rủi ro tín dụng;
+   b) Rủi ro thị trường;
+   c) Rủi ro hoạt động;
+   d) Rủi ro thanh khoản;
+   e) Rủi ro pháp lý;
+   f) Rủi ro danh tiếng.
+
+2. Quản lý rủi ro là quá trình nhận diện, đo lường, giám sát và kiểm soát rủi ro.
+
+3. Hệ thống quản lý rủi ro là tập hợp các chính sách, quy trình, công cụ và con người để quản lý rủi ro.
+
+Điều 4. Nguyên tắc quản lý rủi ro
+
+1. Tổ chức tín dụng phải tuân thủ các nguyên tắc:
+   a) Toàn diện: Quản lý tất cả các loại rủi ro;
+   b) Độc lập: Bộ phận quản lý rủi ro độc lập với bộ phận kinh doanh;
+   c) Minh bạch: Công khai thông tin về rủi ro;
+   d) Liên tục: Giám sát rủi ro thường xuyên;
+   e) Phù hợp: Phương pháp quản lý phù hợp với quy mô và tính chất hoạt động.
+
+2. Tổ chức tín dụng phải xây dựng văn hóa quản lý rủi ro trong toàn bộ tổ chức.
+
+Điều 5. Hệ thống quản lý rủi ro
+
+1. Cấu trúc tổ chức:
+   a) Hội đồng quản trị có trách nhiệm giám sát quản lý rủi ro;
+   b) Ban điều hành chịu trách nhiệm thực hiện quản lý rủi ro;
+   c) Bộ phận quản lý rủi ro độc lập;
+   d) Các bộ phận chức năng hỗ trợ.
+
+2. Chính sách quản lý rủi ro:
+   a) Chính sách tổng thể về quản lý rủi ro;
+   b) Chính sách quản lý từng loại rủi ro;
+   c) Chính sách về giới hạn rủi ro;
+   d) Chính sách về dự phòng rủi ro.
+
+Điều 6. Quản lý rủi ro tín dụng
+
+1. Nhận diện rủi ro tín dụng:
+   a) Rủi ro khách hàng cá nhân;
+   b) Rủi ro khách hàng doanh nghiệp;
+   c) Rủi ro danh mục tín dụng;
+   d) Rủi ro tập trung tín dụng.
+
+2. Đo lường rủi ro tín dụng:
+   a) Xếp hạng tín dụng khách hàng;
+   b) Tính toán xác suất vỡ nợ;
+   c) Ước tính tổn thất khi vỡ nợ;
+   d) Tính toán tổn thất dự kiến.
+
+3. Kiểm soát rủi ro tín dụng:
+   a) Thiết lập giới hạn tín dụng;
+   b) Yêu cầu tài sản đảm bảo;
+   c) Đa dạng hóa danh mục;
+   d) Giám sát thường xuyên.
+
+Điều 7. Quản lý rủi ro thị trường
+
+1. Các loại rủi ro thị trường:
+   a) Rủi ro lãi suất;
+   b) Rủi ro tỷ giá;
+   c) Rủi ro giá cổ phiếu;
+   d) Rủi ro giá hàng hóa.
+
+2. Đo lường rủi ro thị trường:
+   a) Value at Risk (VaR);
+   b) Stress testing;
+   c) Scenario analysis;
+   d) Sensitivity analysis.
+
+3. Kiểm soát rủi ro thị trường:
+   a) Thiết lập giới hạn rủi ro;
+   b) Sử dụng công cụ phòng ngừa rủi ro;
+   c) Đa dạng hóa đầu tư;
+   d) Giám sát thời gian thực.
+
+Điều 8. Quản lý rủi ro hoạt động
+
+1. Nhận diện rủi ro hoạt động:
+   a) Rủi ro nhân sự;
+   b) Rủi ro hệ thống;
+   c) Rủi ro quy trình;
+   d) Rủi ro bên ngoài.
+
+2. Đo lường rủi ro hoạt động:
+   a) Đánh giá tần suất xảy ra;
+   b) Ước tính mức độ thiệt hại;
+   c) Tính toán tổn thất dự kiến;
+   d) Phân tích xu hướng.
+
+3. Kiểm soát rủi ro hoạt động:
+   a) Xây dựng quy trình chuẩn;
+   b) Đào tạo nhân viên;
+   c) Kiểm soát nội bộ;
+   d) Bảo hiểm rủi ro.
+
+Điều 9. Quản lý rủi ro thanh khoản
+
+1. Đo lường rủi ro thanh khoản:
+   a) Tỷ lệ thanh khoản ngắn hạn;
+   b) Tỷ lệ thanh khoản dài hạn;
+   c) Gap analysis;
+   d) Stress testing thanh khoản.
+
+2. Quản lý thanh khoản:
+   a) Duy trì dự trữ thanh khoản;
+   b) Đa dạng hóa nguồn vốn;
+   c) Lập kế hoạch thanh khoản;
+   d) Giám sát thường xuyên.
+
+Điều 10. Báo cáo và giám sát rủi ro
+
+1. Báo cáo rủi ro:
+   a) Báo cáo định kỳ cho Hội đồng quản trị;
+   b) Báo cáo cho Ngân hàng Nhà nước;
+   c) Báo cáo đặc biệt khi có sự cố;
+   d) Báo cáo công khai cho cổ đông.
+
+2. Giám sát rủi ro:
+   a) Giám sát thời gian thực;
+   b) Đánh giá định kỳ;
+   c) Kiểm tra độc lập;
+   d) Cập nhật liên tục.
+
+Điều 11. Ứng phó sự cố rủi ro
+
+1. Kế hoạch ứng phó sự cố:
+   a) Kế hoạch tổng thể;
+   b) Kế hoạch cho từng loại rủi ro;
+   c) Phân công trách nhiệm;
+   d) Quy trình thông báo.
+
+2. Xử lý sự cố:
+   a) Ngăn chặn thiệt hại;
+   b) Khôi phục hoạt động;
+   c) Điều tra nguyên nhân;
+   d) Cải thiện hệ thống.
+
+Điều 12. Xử lý vi phạm
+
+Tổ chức tín dụng vi phạm các quy định của Thông tư này sẽ bị xử lý theo quy định của pháp luật về xử lý vi phạm hành chính trong lĩnh vực ngân hàng.
+
+Điều 13. Hiệu lực thi hành
+
+Thông tư này có hiệu lực thi hành kể từ ngày 01 tháng 8 năm 2024.
+
+Thông tư này thay thế Thông tư số 22/2020/TT-NHNN ngày 15 tháng 10 năm 2020.
+
+Điều 14. Tổ chức thực hiện
+
+1. Thống đốc Ngân hàng Nhà nước Việt Nam chịu trách nhiệm tổ chức thực hiện Thông tư này.
+
+2. Các tổ chức tín dụng có trách nhiệm thực hiện đầy đủ các quy định của Thông tư này.
+
+KT. THỐNG ĐỐC
+PHÓ THỐNG ĐỐC
+Phạm Văn Đức

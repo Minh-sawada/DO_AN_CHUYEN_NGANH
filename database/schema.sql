@@ -1,3 +1,4 @@
+
 -- =====================================================
 -- COMPLETE DATABASE SETUP FOR LEGAL CHATBOT
 -- Chạy file này trong Supabase SQL Editor
@@ -11,28 +12,32 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- =====================================================
 DROP TABLE IF EXISTS laws CASCADE;
 CREATE TABLE laws (
-    id BIGSERIAL PRIMARY KEY,     -- Auto-increment ID
+    id BIGSERIAL PRIMARY KEY,     -- ID tự tăng
     _id TEXT,                     -- ID từ nguồn dữ liệu gốc
-    category TEXT,               -- Loại/danh mục văn bản
-    danh_sach_bang TEXT,         -- Danh sách bảng
+    category TEXT,                -- Loại/danh mục văn bản
+    danh_sach_bang TEXT,          -- Danh sách bảng
     link TEXT,                    -- Link tham chiếu
-    loai_van_ban TEXT,           -- Loại văn bản
-    ngay_ban_hanh TEXT,          -- Ngày ban hành (giữ nguyên dạng text)
-    ngay_cong_bao TEXT,          -- Ngày công báo (giữ nguyên dạng text)
-    ngay_hieu_luc TEXT,          -- Ngày hiệu lực (giữ nguyên dạng text)
-    nguoi_ky TEXT,               -- Người ký văn bản
-    noi_ban_hanh TEXT,           -- Nơi ban hành
-    noi_dung TEXT,               -- Nội dung văn bản
-    noi_dung_html TEXT,          -- Nội dung định dạng HTML
-    so_cong_bao TEXT,            -- Số công báo
-    so_hieu TEXT,                -- Số hiệu văn bản
-    thuoc_tinh_html TEXT,        -- Các thuộc tính HTML
-    tinh_trang TEXT,             -- Tình trạng hiệu lực
-    title TEXT,                  -- Tiêu đề văn bản
-    tom_tat TEXT,                -- Tóm tắt văn bản
-    tom_tat_html TEXT,           -- Tóm tắt định dạng HTML
-    van_ban_duoc_dan TEXT,       -- Văn bản được dẫn chiếu
-    embedding VECTOR(1536),       -- Vector embedding cho tìm kiếm ngữ nghĩa
+    loai_van_ban TEXT,            -- Loại văn bản
+    ngay_ban_hanh TEXT,           -- Ngày ban hành
+    ngay_cong_bao TEXT,           -- Ngày công báo
+    ngay_hieu_luc TEXT,           -- Ngày hiệu lực
+    nguoi_ky TEXT,                -- Người ký văn bản
+    noi_ban_hanh TEXT,            -- Nơi ban hành
+    noi_dung TEXT,                -- Nội dung văn bản (plain text)
+    noi_dung_html TEXT,           -- Nội dung định dạng HTML
+    so_cong_bao TEXT,             -- Số công báo
+    so_hieu TEXT,                 -- Số hiệu văn bản
+    thuoc_tinh_html TEXT,         -- Các thuộc tính HTML
+    tinh_trang TEXT,              -- Tình trạng hiệu lực
+    title TEXT,                   -- Tiêu đề văn bản
+    tom_tat TEXT,                 -- Tóm tắt văn bản
+    tom_tat_html TEXT,            -- Tóm tắt định dạng HTML
+    van_ban_duoc_dan TEXT,        -- Văn bản được dẫn chiếu
+
+    -- Vector cho tìm kiếm ngữ nghĩa (nếu bạn dùng pgvector)
+    embedding VECTOR(1536),
+
+    -- Dấu thời gian hệ thống
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -366,3 +371,4 @@ CREATE INDEX IF NOT EXISTS idx_laws_embedding ON laws USING ivfflat (embedding v
 CREATE INDEX IF NOT EXISTS idx_backup_logs_created_at ON backup_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_backup_logs_status ON backup_logs(status);
 CREATE INDEX IF NOT EXISTS idx_backup_logs_type ON backup_logs(backup_type);
+
