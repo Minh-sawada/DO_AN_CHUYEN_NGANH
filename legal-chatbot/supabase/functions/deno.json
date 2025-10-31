@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "dev": "deno run --watch -A --env .env index.ts"
+  },
+  "compilerOptions": {
+    "allowJs": true,
+    "strict": true,
+    "lib": ["deno.window"]
+  }
+}

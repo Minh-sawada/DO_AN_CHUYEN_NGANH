@@ -14,9 +14,10 @@ interface Message {
   content: string
   sources?: Array<{
     id: number
-    title: string
-    article_reference: string
-    source: string
+    title: string | null
+    so_hieu: string | null
+    loai_van_ban: string | null
+    category: string | null
   }>
   timestamp: Date
 }
@@ -204,9 +205,14 @@ export function ChatInterface() {
                                         <p className="font-medium text-blue-900 text-sm">
                                           {source.title || 'Văn bản pháp luật'}
                                         </p>
-                                        {source.article_reference && (
+                                        {source.so_hieu && (
                                           <p className="text-xs text-blue-700 mt-1">
-                                            {source.article_reference}
+                                            Số hiệu: {source.so_hieu}
+                                          </p>
+                                        )}
+                                        {source.loai_van_ban && (
+                                          <p className="text-xs text-blue-600 mt-1">
+                                            {source.loai_van_ban}
                                           </p>
                                         )}
                                       </div>

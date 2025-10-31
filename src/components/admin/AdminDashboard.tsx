@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { 
   FileText, 
   MessageSquare, 
@@ -13,7 +14,11 @@ import {
   Clock,
   CheckCircle,
   AlertCircle,
-  Activity
+  Activity,
+  Calendar,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Law } from '@/lib/supabase'
@@ -27,6 +32,32 @@ interface DashboardStats {
   successRate: number
 }
 
+interface TimeStats {
+  today: {
+    queries: number
+    laws: number
+    users: number
+  }
+  thisWeek: {
+    queries: number
+    laws: number
+    users: number
+  }
+  thisMonth: {
+    queries: number
+    laws: number
+    users: number
+  }
+  thisYear: {
+    queries: number
+    laws: number
+    users: number
+  }
+  hourly: Array<{ hour: number; count: number }>
+  daily: Array<{ date: string; count: number }>
+  monthly: Array<{ month: string; count: number }>
+}
+
 export function AdminDashboard() {
   const [stats, setStats] = useState<DashboardStats>({
     totalLaws: 0,
@@ -36,8 +67,20 @@ export function AdminDashboard() {
     avgResponseTime: 0,
     successRate: 0
   })
+  const [timeStats, setTimeStats] = useState<TimeStats>({
+    today: { queries: 0, laws: 0, users: 0 },
+    thisWeek: { queries: 0, laws: 0, users: 0 },
+    thisMonth: { queries: 0, laws: 0, users: 0 },
+    thisYear: { queries: 0, laws: 0, users: 0 },
+    hourly: [],
+    daily: [],
+    monthly: []
+  })
   const [recentLaws, setRecentLaws] = useState<Law[]>([])
   const [loading, setLoading] = useState(true)
+  const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month' | 'year'>('today')
+  const [lawsPage, setLawsPage] = useState(1)
+  const lawsPerPage = 5
 
   useEffect(() => {
     fetchDashboardData()
@@ -47,17 +90,23 @@ export function AdminDashboard() {
     try {
       setLoading(true)
       
-      // Fetch laws
+      // Fetch laws (load nhiều hơn để có thể phân trang)
       const { data: laws } = await supabase
         .from('laws')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(100)
 
       // Fetch stats
       const { data: statsData } = await supabase.rpc('get_law_stats')
 
-      setRecentLaws(laws || [])
+      // Đảm bảo dữ liệu an toàn
+      const safeLaws = (laws || []).map(law => ({
+        ...law,
+        noi_dung: law.noi_dung || null,
+        noi_dung_html: law.noi_dung_html || null
+      }))
+      setRecentLaws(safeLaws)
       if (statsData && statsData.length > 0) {
         setStats({
           totalLaws: statsData[0].total_laws || 0,
@@ -68,10 +117,121 @@ export function AdminDashboard() {
           successRate: 95.5 // Mock data
         })
       }
+
+      // Fetch time-based statistics
+      await fetchTimeStats()
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchTimeStats = async () => {
+    try {
+      const now = new Date()
+      const todayStart = new Date(now)
+      todayStart.setHours(0, 0, 0, 0)
+      
+      const weekStart = new Date(now)
+      weekStart.setDate(weekStart.getDate() - 7)
+      
+      const monthStart = new Date(now)
+      monthStart.setMonth(monthStart.getMonth() - 1)
+      
+      const yearStart = new Date(now)
+      yearStart.setFullYear(yearStart.getFullYear() - 1)
+
+      // Fetch queries by time
+      const [todayQueries, weekQueries, monthQueries, yearQueries, allQueries] = await Promise.all([
+        supabase.from('query_logs').select('id, created_at, user_id').gte('created_at', todayStart.toISOString()),
+        supabase.from('query_logs').select('id, created_at, user_id').gte('created_at', weekStart.toISOString()),
+        supabase.from('query_logs').select('id, created_at, user_id').gte('created_at', monthStart.toISOString()),
+        supabase.from('query_logs').select('id, created_at, user_id').gte('created_at', yearStart.toISOString()),
+        supabase.from('query_logs').select('created_at').order('created_at', { ascending: false }).limit(1000)
+      ])
+
+      // Fetch laws by time
+      const [todayLaws, weekLaws, monthLaws, yearLaws] = await Promise.all([
+        supabase.from('laws').select('id').gte('created_at', todayStart.toISOString()),
+        supabase.from('laws').select('id').gte('created_at', weekStart.toISOString()),
+        supabase.from('laws').select('id').gte('created_at', monthStart.toISOString()),
+        supabase.from('laws').select('id').gte('created_at', yearStart.toISOString())
+      ])
+
+      // Count unique users
+      const countUniqueUsers = (data: any[]) => {
+        const userIds = new Set(data.map(item => item.user_id).filter(Boolean))
+        return userIds.size
+      }
+
+      // Process hourly data (last 24 hours)
+      const hourlyData: { [key: number]: number } = {}
+      if (allQueries.data) {
+        allQueries.data.forEach(q => {
+          const hour = new Date(q.created_at).getHours()
+          hourlyData[hour] = (hourlyData[hour] || 0) + 1
+        })
+      }
+      const hourly = Array.from({ length: 24 }, (_, i) => ({
+        hour: i,
+        count: hourlyData[i] || 0
+      }))
+
+      // Process daily data (last 30 days)
+      const dailyData: { [key: string]: number } = {}
+      if (allQueries.data) {
+        allQueries.data.forEach(q => {
+          const date = new Date(q.created_at).toISOString().split('T')[0]
+          dailyData[date] = (dailyData[date] || 0) + 1
+        })
+      }
+      const daily = Object.entries(dailyData)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-30)
+        .map(([date, count]) => ({ date, count }))
+
+      // Process monthly data (last 12 months)
+      const monthlyData: { [key: string]: number } = {}
+      if (allQueries.data) {
+        allQueries.data.forEach(q => {
+          const date = new Date(q.created_at)
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+          monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1
+        })
+      }
+      const monthly = Object.entries(monthlyData)
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .slice(-12)
+        .map(([month, count]) => ({ month, count }))
+
+      setTimeStats({
+        today: {
+          queries: todayQueries.data?.length || 0,
+          laws: todayLaws.data?.length || 0,
+          users: countUniqueUsers(todayQueries.data || [])
+        },
+        thisWeek: {
+          queries: weekQueries.data?.length || 0,
+          laws: weekLaws.data?.length || 0,
+          users: countUniqueUsers(weekQueries.data || [])
+        },
+        thisMonth: {
+          queries: monthQueries.data?.length || 0,
+          laws: monthLaws.data?.length || 0,
+          users: countUniqueUsers(monthQueries.data || [])
+        },
+        thisYear: {
+          queries: yearQueries.data?.length || 0,
+          laws: yearLaws.data?.length || 0,
+          users: countUniqueUsers(yearQueries.data || [])
+        },
+        hourly,
+        daily,
+        monthly
+      })
+    } catch (error) {
+      console.error('Error fetching time stats:', error)
     }
   }
 
@@ -190,6 +350,11 @@ export function AdminDashboard() {
               <TrendingUp className="h-5 w-5 text-green-600" />
               <span>Văn bản gần đây</span>
             </CardTitle>
+            {recentLaws.length > 0 && (
+              <CardDescription>
+                Hiển thị {((lawsPage - 1) * lawsPerPage + 1)}-{Math.min(lawsPage * lawsPerPage, recentLaws.length)} trong tổng số {recentLaws.length} văn bản
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -199,29 +364,402 @@ export function AdminDashboard() {
                   <p className="text-gray-500">Chưa có văn bản nào</p>
                 </div>
               ) : (
-                recentLaws.map((law) => (
-                  <div key={law.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
-                    <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                      <FileText className="h-5 w-5 text-blue-600" />
+                <>
+                  {(recentLaws || [])
+                    .filter(law => law && law.id) // Lọc bỏ các phần tử không hợp lệ
+                    .slice((lawsPage - 1) * lawsPerPage, lawsPage * lawsPerPage) // Phân trang
+                    .map((law) => {
+                      // FIXED: Tính độ dài nội dung - CHỈ dùng noi_dung hoặc noi_dung_html
+                      let lengthText = 'N/A';
+                      
+                      try {
+                        // CHỈ dùng noi_dung và noi_dung_html - KHÔNG dùng content
+                        const noiDung = law?.noi_dung ?? null;
+                        const noiDungHtml = law?.noi_dung_html ?? null;
+                        const textContent = noiDung || noiDungHtml;
+                        
+                        if (textContent && typeof textContent === 'string' && textContent.length !== undefined) {
+                          lengthText = `${textContent.length} ký tự`;
+                        }
+                      } catch (e) {
+                        // Giữ nguyên 'N/A' nếu có lỗi
+                        console.warn('Error calculating content length:', e);
+                      }
+
+                      return (
+                        <div key={law.id} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-gray-50">
+                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <FileText className="h-5 w-5 text-blue-600" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">
+                              {law.title || 'Không có tiêu đề'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {law.created_at ? new Date(law.created_at).toLocaleDateString('vi-VN') : 'N/A'}
+                            </p>
+                          </div>
+                          <Badge variant="secondary" className="text-xs">
+                            {lengthText}
+                          </Badge>
+                        </div>
+                      );
+                    })}
+                  
+                  {/* Pagination Controls */}
+                  {recentLaws.length > lawsPerPage && (
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <div className="text-sm text-gray-600">
+                        Trang {lawsPage} / {Math.ceil(recentLaws.length / lawsPerPage)}
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setLawsPage(prev => Math.max(1, prev - 1))}
+                          disabled={lawsPage === 1}
+                          className="flex items-center space-x-1"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                          <span>Trước</span>
+                        </Button>
+                        
+                        <div className="flex items-center space-x-1">
+                          {Array.from({ length: Math.min(5, Math.ceil(recentLaws.length / lawsPerPage)) }, (_, i) => {
+                            const totalPages = Math.ceil(recentLaws.length / lawsPerPage)
+                            let pageNum: number
+                            
+                            // Tính toán số trang hiển thị (luôn hiển thị 5 trang quanh trang hiện tại)
+                            if (totalPages <= 5) {
+                              pageNum = i + 1
+                            } else if (lawsPage <= 3) {
+                              pageNum = i + 1
+                            } else if (lawsPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i
+                            } else {
+                              pageNum = lawsPage - 2 + i
+                            }
+                            
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={lawsPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setLawsPage(pageNum)}
+                                className="min-w-[2.5rem]"
+                              >
+                                {pageNum}
+                              </Button>
+                            )
+                          })}
+                        </div>
+                        
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setLawsPage(prev => Math.min(Math.ceil(recentLaws.length / lawsPerPage), prev + 1))}
+                          disabled={lawsPage >= Math.ceil(recentLaws.length / lawsPerPage)}
+                          className="flex items-center space-x-1"
+                        >
+                          <span>Sau</span>
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm truncate">
-                        {law.title || 'Không có tiêu đề'}
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        {new Date(law.created_at).toLocaleDateString('vi-VN')}
-                      </p>
-                    </div>
-                    <Badge variant="secondary" className="text-xs">
-                      {law.content.length} ký tự
-                    </Badge>
-                  </div>
-                ))
+                  )}
+                </>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Time-based Statistics */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <BarChart3 className="h-5 w-5 text-purple-600" />
+            <span>Thống kê theo thời gian</span>
+          </CardTitle>
+          <CardDescription>
+            Xem số liệu theo từng khoảng thời gian
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as any)} className="w-full">
+            <TabsList className="grid w-full grid-cols-4">
+              <TabsTrigger value="today">Hôm nay</TabsTrigger>
+              <TabsTrigger value="week">Tuần này</TabsTrigger>
+              <TabsTrigger value="month">Tháng này</TabsTrigger>
+              <TabsTrigger value="year">Năm nay</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="today" className="space-y-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-blue-600">Truy vấn</p>
+                        <p className="text-2xl font-bold text-blue-700">{timeStats.today.queries}</p>
+                      </div>
+                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-green-50 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-green-600">Văn bản mới</p>
+                        <p className="text-2xl font-bold text-green-700">{timeStats.today.laws}</p>
+                      </div>
+                      <FileText className="h-8 w-8 text-green-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-purple-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-purple-600">Người dùng</p>
+                        <p className="text-2xl font-bold text-purple-700">{timeStats.today.users}</p>
+                      </div>
+                      <Users className="h-8 w-8 text-purple-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Hourly Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Theo giờ (24h qua)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {timeStats.hourly.map((item) => {
+                      const maxCount = Math.max(...timeStats.hourly.map(h => h.count), 1)
+                      const percentage = maxCount > 0 ? (item.count / maxCount) * 100 : 0
+                      return (
+                        <div key={item.hour} className="flex items-center space-x-3">
+                          <span className="text-xs text-gray-600 w-12">{item.hour}:00</span>
+                          <div className="flex-1">
+                            <div className="h-6 bg-gray-200 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all"
+                                style={{ width: `${percentage}%` }}
+                              >
+                                {item.count > 0 && (
+                                  <span className="flex items-center justify-end h-full px-2 text-xs text-white font-medium">
+                                    {item.count}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="week" className="space-y-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-blue-600">Truy vấn</p>
+                        <p className="text-2xl font-bold text-blue-700">{timeStats.thisWeek.queries}</p>
+                      </div>
+                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-green-50 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-green-600">Văn bản mới</p>
+                        <p className="text-2xl font-bold text-green-700">{timeStats.thisWeek.laws}</p>
+                      </div>
+                      <FileText className="h-8 w-8 text-green-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-purple-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-purple-600">Người dùng</p>
+                        <p className="text-2xl font-bold text-purple-700">{timeStats.thisWeek.users}</p>
+                      </div>
+                      <Users className="h-8 w-8 text-purple-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="month" className="space-y-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-blue-600">Truy vấn</p>
+                        <p className="text-2xl font-bold text-blue-700">{timeStats.thisMonth.queries}</p>
+                      </div>
+                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-green-50 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-green-600">Văn bản mới</p>
+                        <p className="text-2xl font-bold text-green-700">{timeStats.thisMonth.laws}</p>
+                      </div>
+                      <FileText className="h-8 w-8 text-green-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-purple-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-purple-600">Người dùng</p>
+                        <p className="text-2xl font-bold text-purple-700">{timeStats.thisMonth.users}</p>
+                      </div>
+                      <Users className="h-8 w-8 text-purple-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Daily Chart */}
+              {timeStats.daily.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Theo ngày (30 ngày qua)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {timeStats.daily.map((item) => {
+                        const maxCount = Math.max(...timeStats.daily.map(d => d.count), 1)
+                        const percentage = maxCount > 0 ? (item.count / maxCount) * 100 : 0
+                        const date = new Date(item.date)
+                        return (
+                          <div key={item.date} className="flex items-center space-x-3">
+                            <span className="text-xs text-gray-600 w-24">
+                              {date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                            </span>
+                            <div className="flex-1">
+                              <div className="h-6 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all"
+                                  style={{ width: `${percentage}%` }}
+                                >
+                                  {item.count > 0 && (
+                                    <span className="flex items-center justify-end h-full px-2 text-xs text-white font-medium">
+                                      {item.count}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+
+            <TabsContent value="year" className="space-y-4 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="bg-blue-50 border-blue-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-blue-600">Truy vấn</p>
+                        <p className="text-2xl font-bold text-blue-700">{timeStats.thisYear.queries}</p>
+                      </div>
+                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-green-50 border-green-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-green-600">Văn bản mới</p>
+                        <p className="text-2xl font-bold text-green-700">{timeStats.thisYear.laws}</p>
+                      </div>
+                      <FileText className="h-8 w-8 text-green-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-purple-50 border-purple-200">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm text-purple-600">Người dùng</p>
+                        <p className="text-2xl font-bold text-purple-700">{timeStats.thisYear.users}</p>
+                      </div>
+                      <Users className="h-8 w-8 text-purple-400" />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Monthly Chart */}
+              {timeStats.monthly.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Theo tháng (12 tháng qua)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {timeStats.monthly.map((item) => {
+                        const maxCount = Math.max(...timeStats.monthly.map(m => m.count), 1)
+                        const percentage = maxCount > 0 ? (item.count / maxCount) * 100 : 0
+                        const [year, month] = item.month.split('-')
+                        return (
+                          <div key={item.month} className="flex items-center space-x-3">
+                            <span className="text-xs text-gray-600 w-20">
+                              {month}/{year}
+                            </span>
+                            <div className="flex-1">
+                              <div className="h-8 bg-gray-200 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-purple-400 to-purple-600 transition-all"
+                                  style={{ width: `${percentage}%` }}
+                                >
+                                  {item.count > 0 && (
+                                    <span className="flex items-center justify-end h-full px-3 text-xs text-white font-medium">
+                                      {item.count}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
 
       {/* System Status */}
       <Card>

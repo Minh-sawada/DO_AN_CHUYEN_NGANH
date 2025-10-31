@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { AdminPanel } from '@/components/admin/AdminPanel'
 import { Header } from '@/components/layout/Header'
@@ -25,7 +26,7 @@ export default function AdminPage() {
               <span>Yêu cầu đăng nhập</span>
             </CardTitle>
             <CardDescription>
-              Vui lòng đăng nhập để truy cập trang quản trị
+              Vui lòng đăng nhập để truy cập trang quản trị  
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -41,18 +42,44 @@ export default function AdminPage() {
     )
   }
 
-  if (profile?.role !== 'admin') {
+  // Hiển thị thông báo nếu không có quyền admin
+  if (!profile || profile.role !== 'admin') {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
         <main className="container mx-auto px-4 py-8">
           <div className="max-w-2xl mx-auto">
-            <Alert>
-              <Shield className="h-4 w-4" />
-              <AlertDescription>
-                Bạn không có quyền truy cập trang quản trị. Chỉ có quản trị viên mới có thể truy cập.
-              </AlertDescription>
-            </Alert>
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2">
+                  <Shield className="h-6 w-6 text-red-500" />
+                  <span>Không có quyền truy cập</span>
+                </CardTitle>
+                <CardDescription>
+                  Trang này chỉ dành cho quản trị viên
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Alert>
+                  <Shield className="h-4 w-4" />
+                  <AlertDescription>
+                    {!profile 
+                      ? 'Profile của bạn chưa được tạo. Vui lòng đăng xuất và đăng nhập lại.'
+                      : `Bạn hiện có vai trò: ${profile.role}. Vui lòng liên hệ quản trị viên để được cấp quyền admin.`
+                    }
+                  </AlertDescription>
+                </Alert>
+                {!profile && (
+                  <div className="text-sm text-gray-600 space-y-2">
+                    <p><strong>Giải pháp:</strong></p>
+                    <ul className="list-disc list-inside space-y-1 ml-4">
+                      <li>Đăng xuất và đăng nhập lại để trigger tự động tạo profile</li>
+                      <li>Hoặc liên hệ quản trị viên để tạo profile thủ công với quyền admin</li>
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </main>
       </div>
