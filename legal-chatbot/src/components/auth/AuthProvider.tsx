@@ -23,55 +23,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Get initial session
-    console.log('AuthProvider mounted')
     const getInitialSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        console.log('Initial session:', session)
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        // Nếu có lỗi về refresh token, clear session
+        if (error && (error.message.includes('Refresh Token') || error.message.includes('JWT'))) {
+          console.warn('Invalid session, clearing...', error.message)
+          await supabase.auth.signOut()
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+        
         setSession(session)
         setUser(session?.user ?? null)
-
+        
         if (session?.user) {
           await fetchProfile(session.user.id)
         }
-      } catch (error) {
-        console.error('Error getting initial session:', error)
+      } catch (error: any) {
+        console.error('Error getting session:', error)
+        // Nếu lỗi về token, clear session
+        if (error?.message?.includes('Refresh Token') || error?.message?.includes('JWT')) {
+          await supabase.auth.signOut()
+        }
+        setSession(null)
+        setUser(null)
+        setProfile(null)
       } finally {
         setLoading(false)
-        console.log('Loading finished after initial session')
       }
     }
-
-    // Add timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
-      console.log('AuthProvider timeout - setting loading to false')
-      setLoading(false)
-    }, 3000) // 3 second timeout
 
     getInitialSession()
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
-        console.log('Auth state changed:', event, session)
+        // Bỏ qua lỗi refresh token trong event listener
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          // Token refresh failed, sign out user
+          await supabase.auth.signOut()
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+        
         setSession(session)
         setUser(session?.user ?? null)
-
+        
         if (session?.user) {
           await fetchProfile(session.user.id)
         } else {
           setProfile(null)
         }
-
+        
         setLoading(false)
-        console.log('Loading finished after auth state change')
       }
     )
 
-    return () => {
-      clearTimeout(timeout)
-      subscription.unsubscribe()
-    }
+    return () => subscription.unsubscribe()
   }, [])
 
   const fetchProfile = async (userId: string) => {
@@ -84,8 +100,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching profile:', error)
+        
+        // Nếu profile chưa tồn tại, tự động tạo profile mới
+        if (error.code === 'PGRST116' || error.message.includes('No rows')) {
+          const { data: userData } = await supabase.auth.getUser()
+          if (userData?.user) {
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: userId,
+                full_name: userData.user.user_metadata?.full_name || userData.user.email?.split('@')[0] || 'User',
+                role: 'user'
+              })
+              .select()
+              .single()
+
+            if (!createError && newProfile) {
+              setProfile(newProfile)
+              return
+            }
+          }
+        }
       } else {
-        console.log('Fetched profile:', data)
         setProfile(data)
       }
     } catch (error) {
@@ -94,23 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    try {
-      setLoading(true)
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.error('Error signing out:', error)
-        throw error
-      }
-      // Clear local state
-      setUser(null)
-      setProfile(null)
-      setSession(null)
-    } catch (error) {
-      console.error('Sign out error:', error)
-      throw error
-    } finally {
-      setLoading(false)
-    }
+    await supabase.auth.signOut()
   }
 
   const value = {

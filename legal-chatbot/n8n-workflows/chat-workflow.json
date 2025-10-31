@@ -1,0 +1,177 @@
+{
+  "name": "Legal Chat Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chat",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-chat",
+      "name": "Chat Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "chat-webhook"
+    },
+    {
+      "parameters": {
+        "resource": "text",
+        "operation": "embed",
+        "model": "text-embedding-3-small",
+        "input": "={{ $json.query }}"
+      },
+      "id": "create-query-embedding",
+      "name": "Create Query Embedding",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM match_laws($1, $2, $3)",
+        "parameters": [
+          "={{ $json.embedding }}",
+          "0.7",
+          "5"
+        ]
+      },
+      "id": "search-laws",
+      "name": "Search Laws",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare context for AI\nconst laws = $input.first().json;\nconst query = $input.first().json.query;\n\n// Create context from matched laws\nconst context = laws.map(law => \n  `Tiêu đề: ${law.title}\\n` +\n  `Điều/Khoản: ${law.article_reference || 'N/A'}\\n` +\n  `Nội dung: ${law.content}\\n` +\n  `Nguồn: ${law.source || 'N/A'}\\n`\n).join('\\n---\\n');\n\n// Create sources array\nconst sources = laws.map(law => ({\n  id: law.id,\n  title: law.title,\n  article_reference: law.article_reference,\n  source: law.source,\n  similarity: law.similarity\n}));\n\nreturn {\n  json: {\n    query: query,\n    context: context,\n    sources: sources,\n    matched_ids: laws.map(law => law.id)\n  }\n};"
+      },
+      "id": "prepare-context",
+      "name": "Prepare Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "resource": "chat",
+        "operation": "create",
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Bạn là một trợ lý pháp luật chuyên nghiệp. Hãy trả lời câu hỏi về pháp luật Việt Nam dựa trên các văn bản pháp luật được cung cấp. Trả lời chính xác, rõ ràng và có trích dẫn nguồn. Nếu không tìm thấy thông tin liên quan, hãy nói rõ điều đó."
+            },
+            {
+              "role": "user",
+              "content": "Câu hỏi: {{ $json.query }}\\n\\nVăn bản pháp luật liên quan:\\n{{ $json.context }}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 1000
+        }
+      },
+      "id": "generate-response",
+      "name": "Generate Response",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "query_logs",
+        "columns": "user_id, query, matched_ids, response"
+      },
+      "id": "log-query",
+      "name": "Log Query",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"response\": $json.message.content, \"sources\": $json.sources, \"matched_ids\": $json.matched_ids } }}"
+      },
+      "id": "response",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Chat Webhook": {
+      "main": [
+        [
+          {
+            "node": "Create Query Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Query Embedding": {
+      "main": [
+        [
+          {
+            "node": "Search Laws",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Laws": {
+      "main": [
+        [
+          {
+            "node": "Prepare Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Response": {
+      "main": [
+        [
+          {
+            "node": "Log Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Query": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
