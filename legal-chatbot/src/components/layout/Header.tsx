@@ -1,19 +1,15 @@
 'use client'
 
-import { useState } from 'react'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { useToast } from '@/hooks/use-toast'
-import { LogOut, Scale, Shield, Home, Loader2 } from 'lucide-react'
+import { LogOut, Settings, FileText, User, Scale, Shield, Home } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 
 export function Header() {
-  const { user, profile, signOut, loading } = useAuth()
-  const [isSigningOut, setIsSigningOut] = useState(false)
-  const { toast } = useToast()
+  const { user, profile, signOut } = useAuth()
 
   const getInitials = (name: string) => {
     return name
@@ -22,26 +18,6 @@ export function Header() {
       .join('')
       .toUpperCase()
       .slice(0, 2)
-  }
-
-  const handleSignOut = async () => {
-    try {
-      setIsSigningOut(true)
-      await signOut()
-      toast({
-        title: 'Đăng xuất thành công',
-        description: 'Bạn đã đăng xuất khỏi hệ thống',
-      })
-    } catch (error) {
-      console.error('Sign out error:', error)
-      toast({
-        title: 'Lỗi đăng xuất',
-        description: 'Có lỗi xảy ra khi đăng xuất. Vui lòng thử lại.',
-        variant: 'destructive',
-      })
-    } finally {
-      setIsSigningOut(false)
-    }
   }
 
   return (
@@ -145,17 +121,9 @@ export function Header() {
                     </DropdownMenuItem>
                   )}
                   
-                  <DropdownMenuItem 
-                    onClick={handleSignOut} 
-                    disabled={isSigningOut || loading}
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    {isSigningOut ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <LogOut className="mr-2 h-4 w-4" />
-                    )}
-                    <span>{isSigningOut ? 'Đang đăng xuất...' : 'Đăng xuất'}</span>
+                  <DropdownMenuItem onClick={signOut} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    <span>Đăng xuất</span>
                   </DropdownMenuItem>
                 </div>
               </DropdownMenuContent>

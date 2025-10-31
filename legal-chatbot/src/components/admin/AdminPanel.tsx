@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
 import { 
   Upload, 
@@ -17,22 +19,24 @@ import {
   BarChart3, 
   Loader2,
   Trash2,
-  Activity,
-  CheckCircle,
-  TrendingUp,
-  Globe,
+  Database,
+  Eye,
+  X,
   Search,
-  AlertCircle
+  Filter
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Law } from '@/lib/supabase'
 import { AdminDashboard } from './AdminDashboard'
+import { TestUpload } from './TestUpload'
+import { TestDatabase } from './TestDatabase'
+import { TestUploadSimple } from './TestUploadSimple'
 
 interface QueryLogWithProfile {
-  id: number
+  id: string // UUID
   user_id: string | null
   query: string
-  matched_ids: number[] | null
+  matched_ids: string[] | null // UUID[]
   response: string | null
   created_at: string
   profiles?: {
@@ -45,62 +49,109 @@ export function AdminPanel() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
-  const [govSearchTerm, setGovSearchTerm] = useState('')
-  const [scrapingGov, setScrapingGov] = useState(false)
   const [laws, setLaws] = useState<Law[]>([])
   const [queryLogs, setQueryLogs] = useState<QueryLogWithProfile[]>([])
   const [stats, setStats] = useState({
-    totalLaws: 22, // Set initial value based on actual data
+    totalLaws: 0,
     totalQueries: 0,
     recentQueries: 0
   })
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [fileTitle, setFileTitle] = useState('')
+  const [selectedLaw, setSelectedLaw] = useState<Law | null>(null)
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
+  const [loadingLawDetail, setLoadingLawDetail] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [filterLoaiVanBan, setFilterLoaiVanBan] = useState<string>('all')
   const { toast } = useToast()
 
   useEffect(() => {
-    const loadData = async () => {
-      await fetchLaws()
-      await fetchQueryLogs()
-      fetchStats()
-    }
-    loadData()
+    fetchLaws()
+    fetchQueryLogs()
+    fetchStats()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Update stats when laws or queryLogs change
-  useEffect(() => {
-    const newStats = {
-      totalLaws: laws.length,
-      totalQueries: queryLogs.length,
-      recentQueries: queryLogs.filter(log => {
-        const logDate = new Date(log.created_at)
-        const weekAgo = new Date()
-        weekAgo.setDate(weekAgo.getDate() - 7)
-        return logDate >= weekAgo
-      }).length
-    }
-    console.log('Updating stats:', newStats)
-    setStats(newStats)
-  }, [laws, queryLogs])
 
   const fetchLaws = async () => {
     try {
+      // Kiểm tra session trước
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+      
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+        throw new Error(`Lỗi xác thực: ${sessionError.message}`)
+      }
+
+      if (!session) {
+        console.warn('No active session')
+        toast({
+          title: 'Cảnh báo',
+          description: 'Bạn cần đăng nhập để xem văn bản pháp luật',
+          variant: 'destructive',
+        })
+        return
+      }
+
+      // CHỈ select các cột cần thiết, KHÔNG select noi_dung và noi_dung_html (quá lớn, gây timeout)
+      const { data, error } = await supabase
+        .from('laws')
+        .select('id, _id, category, danh_sach_bang, link, loai_van_ban, ngay_ban_hanh, ngay_cong_bao, ngay_hieu_luc, nguoi_ky, noi_ban_hanh, so_cong_bao, so_hieu, thuoc_tinh_html, tinh_trang, title, tom_tat, tom_tat_html, van_ban_duoc_dan, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(200) // Tăng từ 50 lên 200
+
+      if (error) {
+        console.error('Supabase error:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        })
+        throw new Error(`Lỗi truy vấn: ${error.message || 'Unknown error'}`)
+      }
+
+      // Thêm các field thiếu (noi_dung, noi_dung_html, embedding) với giá trị null để match với Law interface
+      const lawsWithNullFields: Law[] = (data || []).map((law: any) => ({
+        ...law,
+        noi_dung: null,
+        noi_dung_html: null,
+        embedding: null
+      }))
+
+      setLaws(lawsWithNullFields)
+    } catch (error: any) {
+      console.error('Error fetching laws:', error)
+      const errorMessage = error?.message || error?.toString() || 'Không thể tải danh sách văn bản pháp luật'
+      
+      toast({
+        title: 'Lỗi',
+        description: errorMessage,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  // Fetch chi tiết law khi mở dialog (để lấy noi_dung và noi_dung_html)
+  const fetchLawDetail = async (lawId: number) => {
+    try {
+      setLoadingLawDetail(true)
       const { data, error } = await supabase
         .from('laws')
         .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50)
+        .eq('id', lawId)
+        .single()
 
       if (error) throw error
-      setLaws(data || [])
-      console.log('Fetched laws:', data?.length || 0)
-    } catch (error) {
-      console.error('Error fetching laws:', error)
+      if (data) {
+        setSelectedLaw(data)
+      }
+    } catch (error: any) {
+      console.error('Error fetching law detail:', error)
       toast({
         title: 'Lỗi',
-        description: 'Không thể tải danh sách văn bản pháp luật',
+        description: 'Không thể tải chi tiết văn bản',
         variant: 'destructive',
       })
+    } finally {
+      setLoadingLawDetail(false)
     }
   }
 
@@ -114,26 +165,21 @@ export function AdminPanel() {
 
       if (error) throw error
       setQueryLogs(data || [])
-      console.log('Fetched query logs:', data?.length || 0)
     } catch (error) {
       console.error('Error fetching query logs:', error)
     }
   }
 
-  const fetchStats = () => {
-    // Calculate stats from local data
-    const calculatedStats = {
-      totalLaws: laws.length,
-      totalQueries: queryLogs.length,
-      recentQueries: queryLogs.filter(log => {
-        const logDate = new Date(log.created_at)
-        const weekAgo = new Date()
-        weekAgo.setDate(weekAgo.getDate() - 7)
-        return logDate >= weekAgo
-      }).length
+  const fetchStats = async () => {
+    try {
+      const { data, error } = await supabase.rpc('get_law_stats')
+      if (error) throw error
+      if (data && data.length > 0) {
+        setStats(data[0])
+      }
+    } catch (error) {
+      console.error('Error fetching stats:', error)
     }
-    setStats(calculatedStats)
-    console.log('Stats calculated from local data:', calculatedStats)
   }
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -178,11 +224,8 @@ export function AdminPanel() {
       formData.append('file', selectedFile)
       formData.append('title', fileTitle)
 
-      // Gửi đến API route trực tiếp (tạm thời thay thế n8n)
-      const uploadUrl = '/api/upload-test'
-      console.log('Upload API URL:', uploadUrl)
-      
-      const response = await fetch(uploadUrl, {
+      // Gửi đến n8n webhook thay vì API route
+      const response = await fetch(process.env.NEXT_PUBLIC_N8N_UPLOAD_WEBHOOK || 'http://localhost:5678/webhook/upload', {
         method: 'POST',
         body: formData,
       })
@@ -192,15 +235,13 @@ export function AdminPanel() {
         throw new Error(errorData.error || `Upload failed: ${response.status}`)
       }
 
-      // Parse JSON response từ API route
       const result = await response.json()
-      console.log('Upload result:', result)
       
       setUploadProgress(100)
       
       toast({
         title: 'Thành công',
-        description: `Đã upload và xử lý ${result.processedChunks} đoạn văn bản thành công`,
+        description: `Đã upload và xử lý ${result.processedChunks} đoạn văn bản`,
       })
 
       // Reset form
@@ -210,9 +251,8 @@ export function AdminPanel() {
       if (fileInput) fileInput.value = ''
 
       // Refresh data
-      await fetchLaws()
-      await fetchQueryLogs()
-      // Stats will auto-update via useEffect
+      fetchLaws()
+      fetchStats()
 
     } catch (error) {
       console.error('Upload error:', error)
@@ -243,9 +283,8 @@ export function AdminPanel() {
         description: 'Đã xóa văn bản pháp luật',
       })
 
-      await fetchLaws()
-      await fetchQueryLogs()
-      // Stats will auto-update via useEffect
+      fetchLaws()
+      fetchStats()
     } catch (error) {
       console.error('Delete error:', error)
       toast({
@@ -253,59 +292,6 @@ export function AdminPanel() {
         description: 'Không thể xóa văn bản pháp luật',
         variant: 'destructive',
       })
-    }
-  }
-
-  const scrapeGovDocuments = async () => {
-    if (!govSearchTerm.trim()) {
-      toast({
-        title: 'Lỗi',
-        description: 'Vui lòng nhập từ khóa tìm kiếm',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setScrapingGov(true)
-
-    try {
-      const response = await fetch('/api/scrape-gov-docs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          searchTerm: govSearchTerm,
-          limit: 10
-        })
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || `Scraping failed: ${response.status}`)
-      }
-
-      const data = await response.json()
-
-      toast({
-        title: 'Thành công',
-        description: data.message,
-      })
-
-      // Refresh data
-      await fetchLaws()
-      await fetchQueryLogs()
-      // Stats will auto-update via useEffect
-
-    } catch (error) {
-      console.error('Scraping error:', error)
-      toast({
-        title: 'Lỗi',
-        description: 'Có lỗi xảy ra khi lấy dữ liệu từ chính phủ',
-        variant: 'destructive',
-      })
-    } finally {
-      setScrapingGov(false)
     }
   }
 
@@ -374,6 +360,18 @@ export function AdminPanel() {
             <Upload className="h-4 w-4 mr-2" />
             Upload File
           </TabsTrigger>
+          <TabsTrigger value="test" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <FileText className="h-4 w-4 mr-2" />
+            Test Upload
+          </TabsTrigger>
+          <TabsTrigger value="testsimple" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Upload className="h-4 w-4 mr-2" />
+            Test Simple
+          </TabsTrigger>
+          <TabsTrigger value="testdb" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Database className="h-4 w-4 mr-2" />
+            Test DB
+          </TabsTrigger>
           <TabsTrigger value="laws" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <FileText className="h-4 w-4 mr-2" />
             Văn bản pháp luật
@@ -386,16 +384,23 @@ export function AdminPanel() {
             <BarChart3 className="h-4 w-4 mr-2" />
             Thống kê
           </TabsTrigger>
-          <TabsTrigger value="gov-data" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <Globe className="h-4 w-4 mr-2" />
-            Dữ liệu Chính phủ
-          </TabsTrigger>
         </TabsList>
 
       <TabsContent value="dashboard" className="space-y-4">
         <AdminDashboard />
       </TabsContent>
 
+      <TabsContent value="test" className="space-y-4">
+        <TestUpload />
+      </TabsContent>
+
+      <TabsContent value="testsimple" className="space-y-4">
+        <TestUploadSimple />
+      </TabsContent>
+
+      <TabsContent value="testdb" className="space-y-4">
+        <TestDatabase />
+      </TabsContent>
 
       <TabsContent value="upload" className="space-y-4">
         <Card className="border-2 border-dashed border-blue-200 hover:border-blue-400 transition-colors">
@@ -507,17 +512,138 @@ export function AdminPanel() {
               <FileText className="h-6 w-6" />
               <span>Danh sách Văn bản Pháp luật</span>
               <Badge variant="secondary" className="ml-auto">
-                {laws.length} văn bản
+                {(() => {
+                  const filtered = laws.filter(law => {
+                    const matchesSearch = !searchTerm || 
+                      (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                    
+                    const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                    
+                    return matchesSearch && matchesFilter
+                  })
+                  
+                  if (searchTerm || filterLoaiVanBan !== 'all') {
+                    return `${filtered.length} / ${laws.length} văn bản`
+                  }
+                  return `${laws.length} văn bản${laws.length >= 200 ? '+' : ''}`
+                })()}
               </Badge>
             </CardTitle>
             <CardDescription className="text-green-600">
               Quản lý và theo dõi các văn bản pháp luật trong hệ thống
+              {laws.length >= 200 && (
+                <span className="text-blue-600 ml-2">(Đang hiển thị 200 văn bản đầu tiên)</span>
+              )}
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-0">
+          <CardContent>
+            {/* Search and Filter Section */}
+            <div className="mb-4 space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Search Input */}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Tìm kiếm theo tiêu đề, số hiệu, người ký..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                {/* Filter by Loại văn bản */}
+                <div className="w-full sm:w-64">
+                  <Select value={filterLoaiVanBan} onValueChange={setFilterLoaiVanBan}>
+                    <SelectTrigger className="w-full">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Tất cả loại văn bản" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả loại văn bản</SelectItem>
+                      {Array.from(new Set(laws.map(l => l.loai_van_ban).filter(Boolean))).sort().map((loai) => (
+                        <SelectItem key={loai} value={loai || ''}>
+                          {loai}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* Clear Filters Button */}
+                {(searchTerm || filterLoaiVanBan !== 'all') && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchTerm('')
+                      setFilterLoaiVanBan('all')
+                    }}
+                    className="whitespace-nowrap"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Xóa bộ lọc
+                  </Button>
+                )}
+              </div>
+              
+              {/* Results Count */}
+              {(() => {
+                const filtered = laws.filter(law => {
+                  const matchesSearch = !searchTerm || 
+                    (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                  
+                  const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                  
+                  return matchesSearch && matchesFilter
+                })
+                
+                return (
+                  <div className="text-sm text-gray-600">
+                    Hiển thị {filtered.length} / {laws.length} văn bản
+                    {(searchTerm || filterLoaiVanBan !== 'all') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSearchTerm('')
+                          setFilterLoaiVanBan('all')
+                        }}
+                        className="ml-2 h-auto p-0 text-blue-600 hover:text-blue-700"
+                      >
+                        Xóa bộ lọc
+                      </Button>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          </CardContent>
+          
+          <CardContent className="p-0 border-t">
             <ScrollArea className="h-[500px]">
               <div className="p-4 space-y-3">
-                {laws.length === 0 ? (
+                {(() => {
+                  // Filter laws based on search and filter
+                  const filteredLaws = laws.filter(law => {
+                    const matchesSearch = !searchTerm || 
+                      (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                    
+                    const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                    
+                    return matchesSearch && matchesFilter
+                  })
+                  
+                  // Nếu chưa có văn bản nào
+                  if (laws.length === 0) {
+                    return (
                   <div className="text-center py-12">
                     <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                       <FileText className="h-8 w-8 text-gray-400" />
@@ -529,57 +655,123 @@ export function AdminPanel() {
                       Upload văn bản
                     </Button>
                   </div>
-                ) : (
-                  laws.map((law) => (
-                    <div key={law.id} className="group border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all">
+                    )
+                  }
+                  
+                  // Nếu không tìm thấy sau khi filter
+                  if (filteredLaws.length === 0) {
+                    return (
+                      <div className="text-center py-12">
+                        <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                          <FileText className="h-8 w-8 text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">Không tìm thấy văn bản nào</h3>
+                        <p className="text-gray-500 mb-4">
+                          Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc
+                        </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setSearchTerm('')
+                            setFilterLoaiVanBan('all')
+                          }}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Xóa bộ lọc
+                        </Button>
+                      </div>
+                    )
+                  }
+                  
+                  // Hiển thị danh sách đã filter
+                  return filteredLaws.map((law) => (
+                    <div 
+                      key={law.id} 
+                      className="group border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => {
+                        setSelectedLaw(law)
+                        setIsViewDialogOpen(true)
+                        // Fetch chi tiết để lấy noi_dung và noi_dung_html
+                        fetchLawDetail(law.id)
+                      }}
+                    >
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-3 mb-2">
-                            <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                              <FileText className="h-5 w-5 text-blue-600" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-semibold text-gray-900 truncate">
-                                {law.title || 'Không có tiêu đề'}
-                              </h4>
-                              <p className="text-sm text-gray-600">
-                                {law.article_reference || 'Không có điều/khoản'}
-                              </p>
-                            </div>
+                            <h4 className="text-sm font-medium text-gray-900 truncate">
+                              {law.title || 'Untitled'}
+                            </h4>
+                            {law.category && (
+                              <Badge variant="secondary" className="text-xs">
+                                {law.category}
+                              </Badge>
+                            )}
+                            {law.loai_van_ban && (
+                              <Badge variant="outline" className="text-xs">
+                                {law.loai_van_ban}
+                              </Badge>
+                            )}
                           </div>
-                          
-                          <div className="ml-13 space-y-2">
-                            <div className="flex items-center space-x-4 text-sm text-gray-500">
-                              <span className="flex items-center space-x-1">
-                                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                                <span>{law.content.length.toLocaleString()} ký tự</span>
-                              </span>
-                              <span className="flex items-center space-x-1">
-                                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
-                                <span>{new Date(law.created_at).toLocaleDateString('vi-VN')}</span>
-                              </span>
-                              {law.source && (
+                          <div className="mt-1 text-sm text-gray-500">
+                            <div className="flex flex-wrap items-center gap-3">
+                              {law.so_hieu && (
                                 <span className="flex items-center space-x-1">
-                                  <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
-                                  <span className="truncate max-w-32">{law.source}</span>
+                                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                                  <span>Số hiệu: {law.so_hieu}</span>
                                 </span>
                               )}
-                            </div>
-                            
-                            <div className="bg-gray-50 rounded p-3 mt-3">
-                              <p className="text-sm text-gray-700 line-clamp-2">
-                                {law.content.substring(0, 150)}...
-                              </p>
+                              {law.ngay_ban_hanh && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                                  <span>BH: {law.ngay_ban_hanh}</span>
+                                </span>
+                              )}
+                              {law.ngay_hieu_luc && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                                  <span>HL: {law.ngay_hieu_luc}</span>
+                                </span>
+                              )}
+                              {law.tinh_trang && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                                  <span>{law.tinh_trang}</span>
+                                </span>
+                              )}
+                              <span className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                                <span>{new Date(law.created_at).toLocaleDateString('vi-VN')}</span>
+                              </span>
                             </div>
                           </div>
                         </div>
                         
-                        <div className="flex items-center space-x-2 ml-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center space-x-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => deleteLaw(law.id)}
+                            onClick={(e) => {
+                              e.stopPropagation() // Ngăn event bubble lên card
+                              setSelectedLaw(law)
+                              setIsViewDialogOpen(true)
+                              // Fetch chi tiết để lấy noi_dung và noi_dung_html
+                              fetchLawDetail(law.id)
+                            }}
+                            className="text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-300"
+                            title="Xem chi tiết"
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Xem</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation() // Ngăn event bubble lên card
+                              deleteLaw(law.id)
+                            }}
                             className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                            title="Xóa văn bản"
                           >
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -587,7 +779,7 @@ export function AdminPanel() {
                       </div>
                     </div>
                   ))
-                )}
+                })()}
               </div>
             </ScrollArea>
           </CardContent>
@@ -632,175 +824,170 @@ export function AdminPanel() {
         </Card>
       </TabsContent>
 
-
       <TabsContent value="stats" className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-blue-800">Tổng văn bản</CardTitle>
-              <div className="p-2 bg-blue-500 rounded-lg">
-                <FileText className="h-4 w-4 text-white" />
-              </div>
+              <CardTitle className="text-sm font-medium">Tổng văn bản</CardTitle>
+              <FileText className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-blue-900">{stats.totalLaws}</div>
-              <p className="text-xs text-blue-600 mt-1">
-                Văn bản pháp luật trong hệ thống
+              <div className="text-2xl font-bold">{stats.totalLaws}</div>
+              <p className="text-xs text-muted-foreground">
+                Văn bản pháp luật
               </p>
             </CardContent>
           </Card>
           
-          <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-green-800">Tổng truy vấn</CardTitle>
-              <div className="p-2 bg-green-500 rounded-lg">
-                <MessageSquare className="h-4 w-4 text-white" />
-              </div>
+              <CardTitle className="text-sm font-medium">Tổng truy vấn</CardTitle>
+              <MessageSquare className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-green-900">{stats.totalQueries}</div>
-              <p className="text-xs text-green-600 mt-1">
-                Câu hỏi đã được xử lý
+              <div className="text-2xl font-bold">{stats.totalQueries}</div>
+              <p className="text-xs text-muted-foreground">
+                Câu hỏi đã xử lý
               </p>
             </CardContent>
           </Card>
           
-          <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-purple-800">Truy vấn gần đây</CardTitle>
-              <div className="p-2 bg-purple-500 rounded-lg">
-                <TrendingUp className="h-4 w-4 text-white" />
-              </div>
+              <CardTitle className="text-sm font-medium">Truy vấn gần đây</CardTitle>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-purple-900">{stats.recentQueries}</div>
-              <p className="text-xs text-purple-600 mt-1">
+              <div className="text-2xl font-bold">{stats.recentQueries}</div>
+              <p className="text-xs text-muted-foreground">
                 Trong 7 ngày qua
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-orange-800">Trạng thái hệ thống</CardTitle>
-              <div className="p-2 bg-orange-500 rounded-lg">
-                <Activity className="h-4 w-4 text-white" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm font-medium text-orange-900">Hoạt động bình thường</span>
-              </div>
-              <p className="text-xs text-orange-600 mt-1">
-                Tất cả dịch vụ đang chạy
               </p>
             </CardContent>
           </Card>
         </div>
       </TabsContent>
+      </Tabs>
 
-      <TabsContent value="gov-data" className="space-y-4">
-        <Card className="border-2 border-dashed border-blue-200 hover:border-blue-400 transition-colors">
-          <CardHeader className="text-center pb-4">
-            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <Globe className="h-8 w-8 text-blue-600" />
-            </div>
-            <CardTitle className="text-xl">Lấy Dữ liệu từ Chính phủ</CardTitle>
-            <CardDescription>
-              Tìm kiếm và lấy văn bản pháp luật từ Cổng thông tin điện tử Chính phủ
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="gov-search" className="text-base font-medium">Từ khóa tìm kiếm</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="gov-search"
-                    value={govSearchTerm}
-                    onChange={(e) => setGovSearchTerm(e.target.value)}
-                    placeholder="Ví dụ: ngân hàng, tín dụng, bảo hiểm..."
-                    disabled={scrapingGov}
-                    className="text-base"
-                  />
-                  <Button 
-                    onClick={scrapeGovDocuments}
-                    disabled={scrapingGov || !govSearchTerm.trim()}
-                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-                  >
-                    {scrapingGov ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Đang tìm...
-                      </>
-                    ) : (
-                      <>
-                        <Search className="mr-2 h-4 w-4" />
-                        Tìm kiếm
-                      </>
-                    )}
-                  </Button>
-                </div>
+      {/* Dialog xem chi tiết văn bản */}
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-xl font-bold">
+              {selectedLaw?.title || 'Chi tiết văn bản pháp luật'}
+            </DialogTitle>
+            {selectedLaw?.so_hieu && (
+              <div className="flex items-center gap-2 mt-2">
+                <Badge variant="outline">Số hiệu: {selectedLaw.so_hieu}</Badge>
+                {selectedLaw.loai_van_ban && (
+                  <Badge variant="secondary">{selectedLaw.loai_van_ban}</Badge>
+                )}
+                {selectedLaw.category && (
+                  <Badge>{selectedLaw.category}</Badge>
+                )}
               </div>
-
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-medium text-blue-800 mb-2">Các lĩnh vực có sẵn:</h4>
-                <div className="flex flex-wrap gap-2">
-                  {[
-                    'Tài chính - Ngân hàng',
-                    'Luật',
-                    'Thủ tục hành chính', 
-                    'Doanh nghiệp',
-                    'Lao động - Tiền lương',
-                    'Đất đai - Nhà ở',
-                    'Thuế - Lệ phí',
-                    'Thương mại'
-                  ].map((category) => (
-                    <Badge 
-                      key={category}
-                      variant="secondary" 
-                      className="cursor-pointer hover:bg-blue-200"
-                      onClick={() => setGovSearchTerm(category)}
-                    >
-                      {category}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              {scrapingGov && (
-                <div className="space-y-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium text-blue-800">Đang tìm kiếm văn bản...</span>
-                    <span className="text-blue-600 font-bold">Đang xử lý</span>
+            )}
+          </DialogHeader>
+          
+          {selectedLaw && (
+            <div className="space-y-4 mt-4">
+              {/* Thông tin chi tiết */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                {selectedLaw.ngay_ban_hanh && (
+                  <div>
+                    <p className="text-xs text-gray-500">Ngày ban hành</p>
+                    <p className="font-medium">{selectedLaw.ngay_ban_hanh}</p>
                   </div>
-                  <div className="flex items-center space-x-2 text-sm text-blue-600">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Đang kết nối với Cổng thông tin điện tử Chính phủ...</span>
+                )}
+                {selectedLaw.ngay_hieu_luc && (
+                  <div>
+                    <p className="text-xs text-gray-500">Ngày hiệu lực</p>
+                    <p className="font-medium">{selectedLaw.ngay_hieu_luc}</p>
+                  </div>
+                )}
+                {selectedLaw.ngay_cong_bao && (
+                  <div>
+                    <p className="text-xs text-gray-500">Ngày công báo</p>
+                    <p className="font-medium">{selectedLaw.ngay_cong_bao}</p>
+                  </div>
+                )}
+                {selectedLaw.tinh_trang && (
+                  <div>
+                    <p className="text-xs text-gray-500">Tình trạng</p>
+                    <p className="font-medium">{selectedLaw.tinh_trang}</p>
+                  </div>
+                )}
+                {selectedLaw.nguoi_ky && (
+                  <div>
+                    <p className="text-xs text-gray-500">Người ký</p>
+                    <p className="font-medium">{selectedLaw.nguoi_ky}</p>
+                  </div>
+                )}
+                {selectedLaw.noi_ban_hanh && (
+                  <div>
+                    <p className="text-xs text-gray-500">Nơi ban hành</p>
+                    <p className="font-medium">{selectedLaw.noi_ban_hanh}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Tóm tắt */}
+              {selectedLaw.tom_tat && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h3 className="font-semibold text-blue-900 mb-2">Tóm tắt</h3>
+                  <p className="text-sm text-blue-800 whitespace-pre-wrap">
+                    {selectedLaw.tom_tat.replace(/<[^>]+>/g, '').replace(/<jsontable[^>]*>.*?<\/jsontable>/gi, '')}
+                  </p>
+                </div>
+              )}
+
+              {/* Nội dung HTML */}
+              {selectedLaw.noi_dung_html && (
+                <div className="p-4 bg-white rounded-lg border">
+                  <h3 className="font-semibold mb-3">Nội dung</h3>
+                  <div 
+                    className="prose prose-sm max-w-none text-sm"
+                    dangerouslySetInnerHTML={{ 
+                      __html: selectedLaw.noi_dung_html
+                        .replace(/<jsontable[^>]*>.*?<\/jsontable>/gi, '')
+                        .replace(/<json[^>]*>.*?<\/json>/gi, '')
+                    }} 
+                  />
+                </div>
+              )}
+
+              {/* Nội dung plain text */}
+              {!selectedLaw.noi_dung_html && selectedLaw.noi_dung && (
+                <div className="p-4 bg-white rounded-lg border">
+                  <h3 className="font-semibold mb-3">Nội dung</h3>
+                  <div className="text-sm whitespace-pre-wrap max-h-96 overflow-y-auto">
+                    {selectedLaw.noi_dung
+                      .replace(/<[^>]+>/g, ' ')
+                      .replace(/<jsontable[^>]*>.*?<\/jsontable>/gi, '')
+                      .replace(/<json[^>]*>.*?<\/json>/gi, '')
+                      .replace(/\s+/g, ' ')
+                      .trim()}
                   </div>
                 </div>
               )}
-            </div>
 
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-start space-x-3">
-                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                <div>
-                  <h4 className="font-medium text-yellow-800">Lưu ý quan trọng:</h4>
-                  <p className="text-sm text-yellow-700 mt-1">
-                    Tính năng này sẽ tìm kiếm và lấy văn bản pháp luật từ 
-                    <a href="https://vanban.chinhphu.vn/" target="_blank" rel="noopener noreferrer" className="underline ml-1">
-                      Cổng thông tin điện tử Chính phủ
-                    </a> để bổ sung vào cơ sở dữ liệu của hệ thống.
-                  </p>
+              {/* Link */}
+              {selectedLaw.link && (
+                <div className="p-4 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-gray-500 mb-1">Link tham khảo</p>
+                  <a 
+                    href={selectedLaw.link} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline text-sm break-all"
+                  >
+                    {selectedLaw.link}
+                  </a>
                 </div>
-              </div>
+              )}
             </div>
-          </CardContent>
-        </Card>
-      </TabsContent>
-      </Tabs>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

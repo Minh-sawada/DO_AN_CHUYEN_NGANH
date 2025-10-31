@@ -26,7 +26,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // CHỈ init supabaseAdmin ở server-side để tránh lỗi ở client-side
 
 let supabaseAdminInstance: ReturnType<typeof createClient> | null = null
-
+                                      
 function getSupabaseAdmin() {
   // Nếu đã init rồi thì return
   if (supabaseAdminInstance) {
@@ -55,6 +55,7 @@ function getSupabaseAdmin() {
 
     return supabaseAdminInstance
   }
+
 
   // Ở client-side, throw error nếu cố dùng (không nên dùng supabaseAdmin ở client)
   throw new Error('supabaseAdmin can only be used on the server-side. Use supabase for client-side operations.')
@@ -94,7 +95,7 @@ export interface Law {
   thuoc_tinh_html: string | null
   tinh_trang: string | null
   title: string | null
-tom_tat: string | null
+  tom_tat: string | null
   tom_tat_html: string | null
   van_ban_duoc_dan: string | null
   embedding: number[] | null

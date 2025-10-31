@@ -1,4 +1,4 @@
--- Function to match laws using vector similarity
+-- Function to match laws using vector similarity - ĐÃ CẬP NHẬT THEO SCHEMA MỚI
 CREATE OR REPLACE FUNCTION match_laws(
   query_embedding VECTOR(1536),
   match_threshold FLOAT DEFAULT 0.7,
@@ -7,9 +7,10 @@ CREATE OR REPLACE FUNCTION match_laws(
 RETURNS TABLE (
   id BIGINT,
   title TEXT,
-  article_reference TEXT,
-  source TEXT,
-  content TEXT,
+  so_hieu TEXT,
+  noi_dung TEXT,
+  loai_van_ban TEXT,
+  category TEXT,
   similarity FLOAT
 )
 LANGUAGE SQL
@@ -17,12 +18,14 @@ AS $$
   SELECT
     laws.id,
     laws.title,
-    laws.article_reference,
-    laws.source,
-    laws.content,
+    laws.so_hieu,
+    laws.noi_dung,
+    laws.loai_van_ban,
+    laws.category,
     1 - (laws.embedding <=> query_embedding) AS similarity
   FROM laws
-  WHERE 1 - (laws.embedding <=> query_embedding) > match_threshold
+  WHERE laws.embedding IS NOT NULL
+    AND 1 - (laws.embedding <=> query_embedding) > match_threshold
   ORDER BY laws.embedding <=> query_embedding
   LIMIT match_count;
 $$;

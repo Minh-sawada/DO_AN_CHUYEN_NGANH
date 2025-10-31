@@ -2,11 +2,12 @@
 
 import { useAuth } from '@/components/auth/AuthProvider'
 import { LoginForm } from '@/components/auth/LoginForm'
-import { ChatInterfaceWithTabs } from '@/components/chat/ChatInterfaceWithTabs'
+import { ChatInterface } from '@/components/chat/ChatInterface'
 import { Header } from '@/components/layout/Header'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { 
   Scale, 
   Brain, 
@@ -184,7 +185,7 @@ export default function HomePage() {
             </div>
             
             <div className="p-6">
-              <ChatInterfaceWithTabs />
+              <ChatInterface />
             </div>
           </div>
 
