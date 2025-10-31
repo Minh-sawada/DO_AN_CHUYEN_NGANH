@@ -65,14 +65,16 @@ export async function POST(request: NextRequest) {
       // Extract article reference from chunk if possible
       const articleReference = extractArticleReference(chunk)
 
-      // Insert into database
+      // Insert into database - dùng đúng schema
       const { error } = await supabaseAdmin
         .from('laws')
         .insert({
           title: title || file.name.replace(/\.[^/.]+$/, ''),
-          article_reference: articleReference,
-          source: file.name,
-          content: chunk,
+          noi_dung: chunk, // Dùng noi_dung thay vì content
+          noi_dung_html: null,
+          category: 'Uploaded',
+          loai_van_ban: 'Văn bản upload',
+          so_hieu: articleReference || `UP-${Date.now()}-${i}`,
           embedding: dummyEmbedding
         })
 

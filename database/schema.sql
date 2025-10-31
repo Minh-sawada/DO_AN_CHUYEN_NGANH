@@ -109,6 +109,49 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Function tự động tạo profile khi user đăng ký
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (id, full_name, role)
+    VALUES (
+        NEW.id,
+        COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
+        'user'
+    )
+    ON CONFLICT (id) DO NOTHING;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function đồng bộ thông tin từ auth.users sang profiles
+CREATE OR REPLACE FUNCTION public.sync_user_profile()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Cập nhật full_name trong profiles nếu user metadata thay đổi
+    UPDATE public.profiles
+    SET 
+        full_name = COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email, full_name),
+        updated_at = NOW()
+    WHERE id = NEW.id;
+    
+    -- Nếu profile chưa tồn tại, tạo mới
+    IF NOT FOUND THEN
+        INSERT INTO public.profiles (id, full_name, role)
+        VALUES (
+            NEW.id,
+            COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email),
+            'user'
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            full_name = COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.email, profiles.full_name),
+            updated_at = NOW();
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Function tìm kiếm văn bản
 DROP FUNCTION IF EXISTS match_laws(VECTOR(1536), FLOAT, INT);
 
@@ -205,6 +248,21 @@ CREATE TRIGGER update_backup_settings_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- Trigger tự động tạo profile khi user mới đăng ký
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+    AFTER INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_new_user();
+
+-- Trigger đồng bộ thông tin user khi user được cập nhật
+DROP TRIGGER IF EXISTS on_auth_user_updated ON auth.users;
+CREATE TRIGGER on_auth_user_updated
+    AFTER UPDATE ON auth.users
+    FOR EACH ROW
+    WHEN (OLD.raw_user_meta_data IS DISTINCT FROM NEW.raw_user_meta_data OR OLD.email IS DISTINCT FROM NEW.email)
+    EXECUTE FUNCTION public.sync_user_profile();
+
 -- 9. Enable Row Level Security (RLS)
 -- =====================================================
 ALTER TABLE laws ENABLE ROW LEVEL SECURITY;
@@ -252,8 +310,17 @@ DROP POLICY IF EXISTS "Only admins can manage backup settings" ON backup_setting
 CREATE POLICY "Users can view their own profile" ON profiles
     FOR SELECT USING (auth.uid() = id);
 
+CREATE POLICY "Users can update their own profile" ON profiles
+    FOR UPDATE USING (auth.uid() = id)
+    WITH CHECK (auth.uid() = id AND role = 'user');
+
 CREATE POLICY "Only admins can view all profiles" ON profiles
     FOR SELECT USING (
+        auth.uid() IN (SELECT id FROM profiles WHERE role = 'admin')
+    );
+
+CREATE POLICY "Only admins can update any profile" ON profiles
+    FOR UPDATE USING (
         auth.uid() IN (SELECT id FROM profiles WHERE role = 'admin')
     );
 
