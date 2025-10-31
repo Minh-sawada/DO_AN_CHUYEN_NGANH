@@ -1,14 +1,25 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://ohbtiifdbixjxeqbnkrq.supabase.co'
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9oYnRpaWZkYml4anhlcWJua3JxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgzNzQ1NDMsImV4cCI6MjA3Mzk1MDU0M30.GRiwvY43i_BV7BYh6g72zT_3uvKGNS6guCV-eBodx88'
+// Lấy từ .env.local - KHÔNG hardcode keys trong code!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables. Please check .env.local file.')
+}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // For server-side operations that need elevated permissions
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+
+if (!serviceRoleKey) {
+  throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY. Please check .env.local file.')
+}
+
 export const supabaseAdmin = createClient(
   supabaseUrl,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9oYnRpaWZkYml4anhlcWJua3JxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1ODM3NDU0MywiZXhwIjoyMDczOTUwNTQzfQ.CJgDzlGJPP9Ycj0_YQt6aL0aAY7eFr_7YOMWZF9HR1g',
+  serviceRoleKey,
   {
     auth: {
       autoRefreshToken: false,

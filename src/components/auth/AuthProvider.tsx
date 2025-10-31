@@ -24,15 +24,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session
     const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-      setUser(session?.user ?? null)
-      
-      if (session?.user) {
-        await fetchProfile(session.user.id)
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession()
+        
+        // Nếu có lỗi về refresh token, clear session
+        if (error && (error.message.includes('Refresh Token') || error.message.includes('JWT'))) {
+          console.warn('Invalid session, clearing...', error.message)
+          await supabase.auth.signOut()
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+        
+        setSession(session)
+        setUser(session?.user ?? null)
+        
+        if (session?.user) {
+          await fetchProfile(session.user.id)
+        }
+      } catch (error: any) {
+        console.error('Error getting session:', error)
+        // Nếu lỗi về token, clear session
+        if (error?.message?.includes('Refresh Token') || error?.message?.includes('JWT')) {
+          await supabase.auth.signOut()
+        }
+        setSession(null)
+        setUser(null)
+        setProfile(null)
+      } finally {
+        setLoading(false)
       }
-      
-      setLoading(false)
     }
 
     getInitialSession()
@@ -40,6 +63,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Bỏ qua lỗi refresh token trong event listener
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          // Token refresh failed, sign out user
+          await supabase.auth.signOut()
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+          setLoading(false)
+          return
+        }
+        
         setSession(session)
         setUser(session?.user ?? null)
         
@@ -66,6 +100,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         console.error('Error fetching profile:', error)
+        
+        // Nếu profile chưa tồn tại, tự động tạo profile mới
+        if (error.code === 'PGRST116' || error.message.includes('No rows')) {
+          const { data: userData } = await supabase.auth.getUser()
+          if (userData?.user) {
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: userId,
+                full_name: userData.user.user_metadata?.full_name || userData.user.email?.split('@')[0] || 'User',
+                role: 'user'
+              })
+              .select()
+              .single()
+
+            if (!createError && newProfile) {
+              setProfile(newProfile)
+              return
+            }
+          }
+        }
       } else {
         setProfile(data)
       }
