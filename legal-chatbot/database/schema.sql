@@ -47,6 +47,7 @@ CREATE TABLE laws (
 CREATE TABLE IF NOT EXISTS profiles (
     id UUID REFERENCES auth.users(id) PRIMARY KEY,
     full_name TEXT,
+    avatar_url TEXT,
     role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -360,25 +361,63 @@ VALUES (
     'daily',
     30,
     true,
-    100
+    50  -- 50MB - Giới hạn tối đa của Supabase Storage
 ) ON CONFLICT (id) DO NOTHING;
 
 -- 12. Create storage bucket for backups
 -- =====================================================
+-- Tạo bucket backups với limit 50MB (giới hạn tối đa của Supabase)
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES (
     'backups',
     'backups',
     false,
-    104857600, -- 100MB limit
+    52428800, -- 50MB limit (52428800 bytes = 50MB) - Giới hạn tối đa của Supabase
     ARRAY['application/json', 'application/zip', 'application/sql']
-) ON CONFLICT (id) DO NOTHING;
+) ON CONFLICT (id) DO UPDATE SET
+    file_size_limit = 52428800,  -- Cập nhật limit lên 50MB nếu bucket đã tồn tại
+    allowed_mime_types = ARRAY['application/json', 'application/zip', 'application/sql'];
 
 -- Create storage policy
 CREATE POLICY "Only admins can manage backup files" ON storage.objects
     FOR ALL USING (
         bucket_id = 'backups' AND
         auth.uid() IN (SELECT id FROM profiles WHERE role = 'admin')
+    );
+
+-- 12b. Create storage bucket for backups (nếu chưa có)
+-- =====================================================
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+    'backups',
+    'backups',
+    false,
+    104857600, -- 100MB limit (tăng từ 5MB để phù hợp với database lớn)
+    ARRAY['application/json', 'application/zip', 'application/sql']
+) ON CONFLICT (id) DO UPDATE SET
+    file_size_limit = 104857600;
+
+-- Create storage policies for avatars
+-- Note: Files are stored as {user_id}/{timestamp}.{ext}
+CREATE POLICY "Users can upload their own avatar" ON storage.objects
+    FOR INSERT WITH CHECK (
+        bucket_id = 'avatars' AND
+        name LIKE auth.uid()::text || '/%'
+    );
+
+CREATE POLICY "Avatar images are publicly viewable" ON storage.objects
+    FOR SELECT USING (bucket_id = 'avatars');
+
+CREATE POLICY "Users can update their own avatar" ON storage.objects
+    FOR UPDATE USING (
+        bucket_id = 'avatars' AND
+        name LIKE auth.uid()::text || '/%'
+    );
+
+CREATE POLICY "Users can delete their own avatar" ON storage.objects
+    FOR DELETE USING (
+        bucket_id = 'avatars' AND
+        name LIKE auth.uid()::text || '/%'
     );
 
 -- 13. Create views

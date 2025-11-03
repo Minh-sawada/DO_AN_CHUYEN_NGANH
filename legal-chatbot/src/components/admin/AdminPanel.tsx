@@ -28,9 +28,9 @@ import {
 import { supabase } from '@/lib/supabase'
 import { Law } from '@/lib/supabase'
 import { AdminDashboard } from './AdminDashboard'
-import { TestUpload } from './TestUpload'
-import { TestDatabase } from './TestDatabase'
-import { TestUploadSimple } from './TestUploadSimple'
+import { BackupStatus } from './BackupStatus'
+import { LawUpload } from './LawUpload'
+import { SystemManagement } from './SystemManagement'
 
 interface QueryLogWithProfile {
   id: string // UUID
@@ -47,8 +47,6 @@ interface QueryLogWithProfile {
 
 export function AdminPanel() {
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [uploading, setUploading] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
   const [laws, setLaws] = useState<Law[]>([])
   const [queryLogs, setQueryLogs] = useState<QueryLogWithProfile[]>([])
   const [stats, setStats] = useState({
@@ -56,8 +54,6 @@ export function AdminPanel() {
     totalQueries: 0,
     recentQueries: 0
   })
-  const [selectedFile, setSelectedFile] = useState<File | null>(null)
-  const [fileTitle, setFileTitle] = useState('')
   const [selectedLaw, setSelectedLaw] = useState<Law | null>(null)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [loadingLawDetail, setLoadingLawDetail] = useState(false)
@@ -65,14 +61,30 @@ export function AdminPanel() {
   const [filterLoaiVanBan, setFilterLoaiVanBan] = useState<string>('all')
   const { toast } = useToast()
 
+  const [lawsLoading, setLawsLoading] = useState(false)
+  const [queryLogsLoading, setQueryLogsLoading] = useState(false)
+  const [statsLoading, setStatsLoading] = useState(false)
+
   useEffect(() => {
+    // Load song song để tăng tốc độ
+    const loadInitialData = async () => {
+      // Load stats và laws song song (quan trọng nhất cho dashboard)
+      await Promise.all([
+        fetchStats(),
     fetchLaws()
+      ])
+      
+      // Load query logs sau (ít quan trọng hơn)
     fetchQueryLogs()
-    fetchStats()
+    }
+    
+    loadInitialData()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchLaws = async () => {
     try {
+      setLawsLoading(true)
+      
       // Kiểm tra session trước
       const { data: { session }, error: sessionError } = await supabase.auth.getSession()
       
@@ -92,11 +104,12 @@ export function AdminPanel() {
       }
 
       // CHỈ select các cột cần thiết, KHÔNG select noi_dung và noi_dung_html (quá lớn, gây timeout)
+      // Giảm limit để tăng tốc độ load ban đầu
       const { data, error } = await supabase
         .from('laws')
-        .select('id, _id, category, danh_sach_bang, link, loai_van_ban, ngay_ban_hanh, ngay_cong_bao, ngay_hieu_luc, nguoi_ky, noi_ban_hanh, so_cong_bao, so_hieu, thuoc_tinh_html, tinh_trang, title, tom_tat, tom_tat_html, van_ban_duoc_dan, created_at, updated_at')
+        .select('id, _id, category, link, loai_van_ban, ngay_ban_hanh, ngay_hieu_luc, so_hieu, tinh_trang, title, tom_tat, created_at, updated_at')
         .order('created_at', { ascending: false })
-        .limit(200) // Tăng từ 50 lên 200
+        .limit(50) // Giảm xuống 50 records ban đầu để tải nhanh hơn
 
       if (error) {
         console.error('Supabase error:', {
@@ -126,6 +139,8 @@ export function AdminPanel() {
         description: errorMessage,
         variant: 'destructive',
       })
+    } finally {
+      setLawsLoading(false)
     }
   }
 
@@ -157,113 +172,89 @@ export function AdminPanel() {
 
   const fetchQueryLogs = async () => {
     try {
+      setQueryLogsLoading(true)
+      
+      // Chỉ select các field cần thiết, giảm limit
       const { data, error } = await supabase
         .from('query_logs')
-        .select('*')
+        .select('id, user_id, query, created_at')
         .order('created_at', { ascending: false })
-        .limit(50)
+        .limit(30) // Giảm từ 50 xuống 30
 
       if (error) throw error
-      setQueryLogs(data || [])
+      // Map data để match với QueryLogWithProfile interface
+      const mappedLogs: QueryLogWithProfile[] = (data || []).map((log: any) => ({
+        ...log,
+        matched_ids: log.matched_ids || null,
+        response: log.response || null
+      }))
+      setQueryLogs(mappedLogs)
     } catch (error) {
       console.error('Error fetching query logs:', error)
+    } finally {
+      setQueryLogsLoading(false)
     }
   }
 
   const fetchStats = async () => {
     try {
-      const { data, error } = await supabase.rpc('get_law_stats')
-      if (error) throw error
-      if (data && data.length > 0) {
-        setStats(data[0])
+      setStatsLoading(true)
+      
+      // Cache stats trong 30 giây để tránh query liên tục
+      const cacheKey = 'dashboard_stats_cache'
+      const cached = sessionStorage.getItem(cacheKey)
+      const now = Date.now()
+      
+      if (cached) {
+        const { data: cachedData, timestamp } = JSON.parse(cached)
+        if (now - timestamp < 30000) { // 30 giây cache
+          setStats(cachedData)
+          setStatsLoading(false)
+          return
+        }
       }
+      
+      // Tính toán ngày 7 ngày trước
+      const sevenDaysAgo = new Date()
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      const sevenDaysAgoISO = sevenDaysAgo.toISOString()
+      
+      // Fetch stats song song
+      const [lawsCount, queriesCount, recentQueriesCount] = await Promise.all([
+        supabase
+          .from('laws')
+          .select('id', { count: 'exact', head: true }),
+        supabase
+          .from('query_logs')
+          .select('id', { count: 'exact', head: true }),
+        supabase
+          .from('query_logs')
+          .select('id', { count: 'exact', head: true })
+          .gte('created_at', sevenDaysAgoISO)
+      ])
+      
+      const statsData = {
+        totalLaws: lawsCount.count || 0,
+        totalQueries: queriesCount.count || 0,
+        recentQueries: recentQueriesCount.count || 0
+      }
+      
+      setStats(statsData)
+      
+      // Cache lại
+      sessionStorage.setItem(cacheKey, JSON.stringify({
+        data: statsData,
+        timestamp: now
+      }))
     } catch (error) {
       console.error('Error fetching stats:', error)
-    }
-  }
-
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) {
-      // Check file size (10MB limit)
-      if (file.size > 10 * 1024 * 1024) {
-        toast({
-          title: 'Lỗi',
-          description: 'File quá lớn. Kích thước tối đa là 10MB',
-          variant: 'destructive',
-        })
-        return
-      }
-
-      // Accept all file types - let the API handle the processing
-      setSelectedFile(file)
-      setFileTitle(file.name.replace(/\.[^/.]+$/, ''))
-      
-      toast({
-        title: 'File đã chọn',
-        description: `Đã chọn file: ${file.name}`,
-      })
-    }
-  }
-
-  const handleUpload = async () => {
-    if (!selectedFile) {
       toast({
         title: 'Lỗi',
-        description: 'Vui lòng chọn file để upload',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setUploading(true)
-    setUploadProgress(0)
-
-    try {
-      const formData = new FormData()
-      formData.append('file', selectedFile)
-      formData.append('title', fileTitle)
-
-      // Gửi đến n8n webhook thay vì API route
-      const response = await fetch(process.env.NEXT_PUBLIC_N8N_UPLOAD_WEBHOOK || 'http://localhost:5678/webhook/upload', {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || `Upload failed: ${response.status}`)
-      }
-
-      const result = await response.json()
-      
-      setUploadProgress(100)
-      
-      toast({
-        title: 'Thành công',
-        description: `Đã upload và xử lý ${result.processedChunks} đoạn văn bản`,
-      })
-
-      // Reset form
-      setSelectedFile(null)
-      setFileTitle('')
-      const fileInput = document.getElementById('file-upload') as HTMLInputElement
-      if (fileInput) fileInput.value = ''
-
-      // Refresh data
-      fetchLaws()
-      fetchStats()
-
-    } catch (error) {
-      console.error('Upload error:', error)
-      toast({
-        title: 'Lỗi',
-        description: 'Có lỗi xảy ra khi upload file',
+        description: 'Không thể tải thống kê',
         variant: 'destructive',
       })
     } finally {
-      setUploading(false)
-      setUploadProgress(0)
+      setStatsLoading(false)
     }
   }
 
@@ -318,7 +309,10 @@ export function AdminPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-green-600">Tổng văn bản</p>
-                <p className="text-2xl font-bold text-green-700">{stats.totalLaws}</p>
+                <p className="text-2xl font-bold text-green-700">
+                  {statsLoading ? '...' : stats.totalLaws.toLocaleString('vi-VN')}
+                </p>
+                <p className="text-xs text-green-500 mt-1">Văn bản pháp luật</p>
               </div>
               <FileText className="h-8 w-8 text-green-600" />
             </div>
@@ -330,7 +324,10 @@ export function AdminPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-blue-600">Tổng truy vấn</p>
-                <p className="text-2xl font-bold text-blue-700">{stats.totalQueries}</p>
+                <p className="text-2xl font-bold text-blue-700">
+                  {statsLoading ? '...' : stats.totalQueries.toLocaleString('vi-VN')}
+                </p>
+                <p className="text-xs text-blue-500 mt-1">Câu hỏi đã xử lý</p>
               </div>
               <MessageSquare className="h-8 w-8 text-blue-600" />
             </div>
@@ -342,7 +339,10 @@ export function AdminPanel() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-purple-600">Truy vấn gần đây</p>
-                <p className="text-2xl font-bold text-purple-700">{stats.recentQueries}</p>
+                <p className="text-2xl font-bold text-purple-700">
+                  {statsLoading ? '...' : stats.recentQueries.toLocaleString('vi-VN')}
+                </p>
+                <p className="text-xs text-purple-500 mt-1">Trong 7 ngày qua</p>
               </div>
               <BarChart3 className="h-8 w-8 text-purple-600" />
             </div>
@@ -351,7 +351,7 @@ export function AdminPanel() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-8 bg-white shadow-sm">
+        <TabsList className="grid w-full grid-cols-6 bg-white shadow-sm">
           <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <BarChart3 className="h-4 w-4 mr-2" />
             Dashboard
@@ -359,22 +359,6 @@ export function AdminPanel() {
           <TabsTrigger value="upload" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <Upload className="h-4 w-4 mr-2" />
             Upload File
-          </TabsTrigger>
-          <TabsTrigger value="test" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <FileText className="h-4 w-4 mr-2" />
-            Test Upload
-          </TabsTrigger>
-          <TabsTrigger value="testsimple" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <Upload className="h-4 w-4 mr-2" />
-            Test Simple
-          </TabsTrigger>
-          <TabsTrigger value="testdb" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <Database className="h-4 w-4 mr-2" />
-            Test DB
-          </TabsTrigger>
-          <TabsTrigger value="laws" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <FileText className="h-4 w-4 mr-2" />
-            Văn bản pháp luật
           </TabsTrigger>
           <TabsTrigger value="queries" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <MessageSquare className="h-4 w-4 mr-2" />
@@ -384,128 +368,28 @@ export function AdminPanel() {
             <BarChart3 className="h-4 w-4 mr-2" />
             Thống kê
           </TabsTrigger>
+          <TabsTrigger value="system" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Database className="h-4 w-4 mr-2" />
+            Quản trị hệ thống
+          </TabsTrigger>
+          <TabsTrigger value="backup" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+            <Database className="h-4 w-4 mr-2" />
+            Backup
+          </TabsTrigger>
         </TabsList>
 
       <TabsContent value="dashboard" className="space-y-4">
         <AdminDashboard />
       </TabsContent>
 
-      <TabsContent value="test" className="space-y-4">
-        <TestUpload />
-      </TabsContent>
-
-      <TabsContent value="testsimple" className="space-y-4">
-        <TestUploadSimple />
-      </TabsContent>
-
-      <TabsContent value="testdb" className="space-y-4">
-        <TestDatabase />
-      </TabsContent>
-
       <TabsContent value="upload" className="space-y-4">
-        <Card className="border-2 border-dashed border-blue-200 hover:border-blue-400 transition-colors">
-          <CardHeader className="text-center pb-4">
-            <div className="mx-auto w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
-              <Upload className="h-8 w-8 text-blue-600" />
-            </div>
-            <CardTitle className="text-xl">Upload Văn bản Pháp luật</CardTitle>
-            <CardDescription>
-              Kéo thả file hoặc click để chọn file PDF, Word, Text, hoặc các định dạng khác
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* File Upload Area */}
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
-              <div className="space-y-4">
-                <div className="mx-auto w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center">
-                  <FileText className="h-6 w-6 text-gray-400" />
-                </div>
-                <div>
-                  <Label htmlFor="file-upload" className="cursor-pointer">
-                    <span className="text-blue-600 font-medium hover:text-blue-800">
-                      Click để chọn file
-                    </span>
-                    <span className="text-gray-500"> hoặc kéo thả vào đây</span>
-                  </Label>
-                  <Input
-                    id="file-upload"
-                    type="file"
-                    accept=".pdf,.doc,.docx,.txt,.rtf,.odt"
-                    onChange={handleFileSelect}
-                    disabled={uploading}
-                    className="hidden"
-                  />
-                </div>
-                <p className="text-sm text-gray-500">
-                  Hỗ trợ: PDF, DOC, DOCX, TXT, RTF, ODT (tối đa 10MB)
-                </p>
-              </div>
-            </div>
-
-            {selectedFile && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                    <FileText className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-green-800">{selectedFile.name}</p>
-                    <p className="text-sm text-green-600">
-                      {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div className="space-y-2">
-              <Label htmlFor="file-title" className="text-base font-medium">Tiêu đề văn bản</Label>
-              <Input
-                id="file-title"
-                value={fileTitle}
-                onChange={(e) => setFileTitle(e.target.value)}
-                placeholder="Nhập tiêu đề cho văn bản pháp luật..."
-                disabled={uploading}
-                className="text-base"
-              />
-            </div>
-
-            {uploading && (
-              <div className="space-y-3 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-blue-800">Đang xử lý file...</span>
-                  <span className="text-blue-600 font-bold">{uploadProgress}%</span>
-                </div>
-                <Progress value={uploadProgress} className="w-full h-2" />
-                <div className="flex items-center space-x-2 text-sm text-blue-600">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Đang extract text và tạo embeddings...</span>
-                </div>
-              </div>
-            )}
-
-            <Button 
-              onClick={handleUpload} 
-              disabled={!selectedFile || uploading || !fileTitle.trim()}
-              className="w-full h-12 text-base font-medium bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Đang xử lý...
-                </>
-              ) : (
-                <>
-                  <Upload className="mr-2 h-5 w-5" />
-                  Upload và Xử lý File
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
+        <LawUpload />
       </TabsContent>
 
       <TabsContent value="laws" className="space-y-4">
+        <LawUpload />
+        
+        <div className="border-t pt-4 mt-4">
         <Card>
           <CardHeader className="bg-gradient-to-r from-green-50 to-green-100 border-b">
             <CardTitle className="flex items-center space-x-2 text-green-800">
@@ -784,6 +668,7 @@ export function AdminPanel() {
             </ScrollArea>
           </CardContent>
         </Card>
+        </div>
       </TabsContent>
 
       <TabsContent value="queries" className="space-y-4">
@@ -865,6 +750,14 @@ export function AdminPanel() {
             </CardContent>
           </Card>
         </div>
+      </TabsContent>
+
+      <TabsContent value="system" className="space-y-4">
+        <SystemManagement />
+      </TabsContent>
+
+      <TabsContent value="backup" className="space-y-4">
+        <BackupStatus />
       </TabsContent>
       </Tabs>
 

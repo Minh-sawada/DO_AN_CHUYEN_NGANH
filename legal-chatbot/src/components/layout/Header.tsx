@@ -7,6 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { LogOut, Settings, FileText, User, Scale, Shield, Home } from 'lucide-react'
 import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
+import { getAvatarEmoji } from '@/lib/avatars'
 
 export function Header() {
   const { user, profile, signOut } = useAuth()
@@ -19,6 +20,21 @@ export function Header() {
       .toUpperCase()
       .slice(0, 2)
   }
+
+  const getAvatarDisplay = () => {
+    if (!profile?.avatar_url) return null
+    
+    // Kiểm tra xem có phải emoji không
+    if (profile.avatar_url.startsWith('emoji:')) {
+      const emojiId = profile.avatar_url.replace('emoji:', '')
+      return getAvatarEmoji(emojiId)
+    }
+    
+    return null
+  }
+
+  const avatarEmoji = getAvatarDisplay()
+  const avatarUrl = profile?.avatar_url && !profile.avatar_url.startsWith('emoji:') ? profile.avatar_url : ''
 
   return (
     <header className="bg-white/80 backdrop-blur-sm shadow-lg border-b border-white/20 sticky top-0 z-50">
@@ -67,22 +83,13 @@ export function Header() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full hover:bg-gray-100 transition-colors">
-                  <Avatar className="h-10 w-10 border-2 border-blue-200">
-                    <AvatarImage src="" alt={profile?.full_name || ''} />
-                    <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium">
-                      {profile?.full_name 
-                        ? getInitials(profile.full_name)
-                        : user?.email?.charAt(0).toUpperCase() || 'U'
-                      }
-                    </AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-64" align="end" forceMount>
-                <div className="flex flex-col space-y-2 p-3 border-b border-gray-100">
-                  <div className="flex items-center space-x-3">
-                    <Avatar className="h-10 w-10">
-                      <AvatarImage src="" alt={profile?.full_name || ''} />
+                  {avatarEmoji ? (
+                    <div className="h-10 w-10 rounded-full border-2 border-blue-200 flex items-center justify-center bg-gray-50">
+                      <span className="text-xl">{avatarEmoji}</span>
+                    </div>
+                  ) : (
+                    <Avatar className="h-10 w-10 border-2 border-blue-200">
+                      <AvatarImage src={avatarUrl} alt={profile?.full_name || ''} />
                       <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium">
                         {profile?.full_name 
                           ? getInitials(profile.full_name)
@@ -90,6 +97,27 @@ export function Header() {
                         }
                       </AvatarFallback>
                     </Avatar>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-64" align="end" forceMount>
+                <div className="flex flex-col space-y-2 p-3 border-b border-gray-100">
+                  <div className="flex items-center space-x-3">
+                    {avatarEmoji ? (
+                      <div className="h-10 w-10 rounded-full flex items-center justify-center bg-gray-50">
+                        <span className="text-xl">{avatarEmoji}</span>
+                      </div>
+                    ) : (
+                      <Avatar className="h-10 w-10">
+                        <AvatarImage src={avatarUrl} alt={profile?.full_name || ''} />
+                        <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white font-medium">
+                          {profile?.full_name 
+                            ? getInitials(profile.full_name)
+                            : user?.email?.charAt(0).toUpperCase() || 'U'
+                          }
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
                     <div className="flex-1">
                       <p className="text-sm font-medium text-gray-900">
                         {profile?.full_name || 'Người dùng'}
@@ -109,6 +137,13 @@ export function Header() {
                     <Link href="/" className="flex items-center space-x-2 cursor-pointer">
                       <Home className="h-4 w-4" />
                       <span>Trang chủ</span>
+                    </Link>
+                  </DropdownMenuItem>
+                  
+                  <DropdownMenuItem asChild>
+                    <Link href="/profile" className="flex items-center space-x-2 cursor-pointer">
+                      <User className="h-4 w-4" />
+                      <span>Thông tin cá nhân</span>
                     </Link>
                   </DropdownMenuItem>
                   
