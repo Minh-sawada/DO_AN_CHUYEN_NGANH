@@ -223,9 +223,11 @@ VALUES (
   'backups',
   'backups',
   false,
-  104857600, -- 100MB limit
+  52428800, -- 50MB limit (52428800 bytes = 50MB) - Giới hạn tối đa của Supabase
   ARRAY['application/json', 'application/zip', 'application/sql']
-) ON CONFLICT (id) DO NOTHING;
+) ON CONFLICT (id) DO UPDATE SET
+    file_size_limit = 52428800,  -- Cập nhật limit lên 50MB nếu bucket đã tồn tại
+    allowed_mime_types = ARRAY['application/json', 'application/zip', 'application/sql'];
 
 -- 7. Tạo policy cho storage bucket
 -- =====================================================
