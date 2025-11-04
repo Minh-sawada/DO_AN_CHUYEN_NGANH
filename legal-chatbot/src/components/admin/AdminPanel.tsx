@@ -26,7 +26,8 @@ import {
   Filter
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { Law } from '@/lib/supabase'
+import { Law, Profile } from '@/lib/supabase'
+import { useAuth } from '@/components/auth/AuthProvider'
 import { AdminDashboard } from './AdminDashboard'
 import { BackupStatus } from './BackupStatus'
 import { LawUpload } from './LawUpload'
@@ -46,6 +47,7 @@ interface QueryLogWithProfile {
 }
 
 export function AdminPanel() {
+  const { profile } = useAuth()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [laws, setLaws] = useState<Law[]>([])
   const [queryLogs, setQueryLogs] = useState<QueryLogWithProfile[]>([])
@@ -64,6 +66,9 @@ export function AdminPanel() {
   const [lawsLoading, setLawsLoading] = useState(false)
   const [queryLogsLoading, setQueryLogsLoading] = useState(false)
   const [statsLoading, setStatsLoading] = useState(false)
+  
+  const isAdmin = profile?.role === 'admin'
+  const isEditor = profile?.role === 'editor'
 
   useEffect(() => {
     // Load song song để tăng tốc độ
@@ -351,7 +356,7 @@ export function AdminPanel() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6 bg-white shadow-sm">
+        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-4'} bg-white shadow-sm`}>
           <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <BarChart3 className="h-4 w-4 mr-2" />
             Dashboard
@@ -368,14 +373,18 @@ export function AdminPanel() {
             <BarChart3 className="h-4 w-4 mr-2" />
             Thống kê
           </TabsTrigger>
-          <TabsTrigger value="system" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <Database className="h-4 w-4 mr-2" />
-            Quản trị hệ thống
-          </TabsTrigger>
-          <TabsTrigger value="backup" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <Database className="h-4 w-4 mr-2" />
-            Backup
-          </TabsTrigger>
+          {isAdmin && (
+            <>
+              <TabsTrigger value="system" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <Database className="h-4 w-4 mr-2" />
+                Quản trị hệ thống
+              </TabsTrigger>
+              <TabsTrigger value="backup" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <Database className="h-4 w-4 mr-2" />
+                Backup
+              </TabsTrigger>
+            </>
+          )}
         </TabsList>
 
       <TabsContent value="dashboard" className="space-y-4">
@@ -647,18 +656,20 @@ export function AdminPanel() {
                             <Eye className="h-4 w-4 mr-1" />
                             <span className="text-xs">Xem</span>
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation() // Ngăn event bubble lên card
-                              deleteLaw(law.id)
-                            }}
-                            className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
-                            title="Xóa văn bản"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation() // Ngăn event bubble lên card
+                                deleteLaw(law.id)
+                              }}
+                              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                              title="Xóa văn bản"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -752,13 +763,17 @@ export function AdminPanel() {
         </div>
       </TabsContent>
 
-      <TabsContent value="system" className="space-y-4">
-        <SystemManagement />
-      </TabsContent>
+      {isAdmin && (
+        <>
+          <TabsContent value="system" className="space-y-4">
+            <SystemManagement />
+          </TabsContent>
 
-      <TabsContent value="backup" className="space-y-4">
-        <BackupStatus />
-      </TabsContent>
+          <TabsContent value="backup" className="space-y-4">
+            <BackupStatus />
+          </TabsContent>
+        </>
+      )}
       </Tabs>
 
       {/* Dialog xem chi tiết văn bản */}

@@ -54,3 +54,24 @@ export async function requireAdmin() {
   
   return { session, profile }
 }
+
+export async function requireEditor() {
+  const { session } = await requireAuth()
+  const supabase = await createSupabaseServerClient()
+  
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', session.user.id)
+    .single()
+  
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'editor')) {
+    throw new Error('Forbidden - Editor or Admin access required')
+  }
+  
+  return { session, profile }
+}
+
+export async function requireAdminOrEditor() {
+  return requireEditor()
+}
