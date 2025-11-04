@@ -49,7 +49,8 @@ import {
   Search,
   Filter,
   X,
-  RefreshCw
+  RefreshCw,
+  Trash2
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
@@ -148,6 +149,16 @@ export function SystemManagement() {
     fetchSuspiciousActivities()
     fetchBannedUsers()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers()
+      // Đảm bảo fetch currentUser khi vào tab users
+      if (!currentUser) {
+        fetchCurrentUser()
+      }
+    }
+  }, [activeTab])
 
   useEffect(() => {
     if (banDialogOpen) {
@@ -404,7 +415,7 @@ export function SystemManagement() {
   return (
     <div className="space-y-6">
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="activities">
             <Activity className="h-4 w-4 mr-2" />
             Logs hoạt động
@@ -416,6 +427,10 @@ export function SystemManagement() {
           <TabsTrigger value="banned">
             <Ban className="h-4 w-4 mr-2" />
             User bị ban
+          </TabsTrigger>
+          <TabsTrigger value="users">
+            <User className="h-4 w-4 mr-2" />
+            Quản lý người dùng
           </TabsTrigger>
         </TabsList>
 
@@ -641,6 +656,329 @@ export function SystemManagement() {
                                 Giải quyết
                               </Button>
                             )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab: Users Management */}
+        <TabsContent value="users" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Quản lý người dùng</span>
+                <div className="flex items-center gap-2">
+                  {currentUser && (
+                    <Badge className={currentUser.role === 'admin' ? 'bg-red-600 text-white' : currentUser.role === 'editor' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white'}>
+                      Bạn: {currentUser.role === 'admin' ? 'Quản trị viên' : currentUser.role === 'editor' ? 'Biên tập viên' : 'Người dùng'}
+                    </Badge>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={fetchUsers}
+                    disabled={usersLoading}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${usersLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </CardTitle>
+              <CardDescription>
+                Quản lý vai trò và quyền của người dùng trong hệ thống. 
+                {currentUser?.role === 'admin' && ' Bạn có thể xóa user có quyền thấp hơn (Editor, User).'}
+                {(!currentUser || currentUser.role !== 'admin') && ' Chỉ Admin mới có thể xóa user.'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Search */}
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input
+                    placeholder="Tìm kiếm theo tên..."
+                    value={userSearch}
+                    onChange={(e) => {
+                      setUserSearch(e.target.value)
+                      setTimeout(fetchUsers, 300)
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Users List */}
+              <div className="border rounded-lg max-h-[600px] overflow-y-auto">
+                {usersLoading ? (
+                  <div className="p-8 text-center">Đang tải...</div>
+                ) : users.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500">Không có user nào</div>
+                ) : (
+                  <div className="divide-y">
+                    {users.map((user) => (
+                      <div key={user.id} className="p-4 hover:bg-gray-50">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge className={(() => {
+                                if (user.role === 'admin') return 'bg-red-600 text-white'
+                                if (user.role === 'editor') return 'bg-blue-600 text-white'
+                                return 'bg-gray-600 text-white'
+                              })()}>
+                                {user.role === 'admin' ? 'Quản trị viên' : 
+                                 user.role === 'editor' ? 'Biên tập viên' : 'Người dùng'}
+                              </Badge>
+                              <span className="text-sm text-gray-500">
+                                {new Date(user.created_at).toLocaleString('vi-VN')}
+                              </span>
+                            </div>
+                            <p className="font-medium mb-1">
+                              <User className="h-4 w-4 inline mr-1" />
+                              {user.full_name || '(Không có tên)'}
+                            </p>
+                            <div className="text-sm text-gray-600 space-y-1">
+                              {user.email && (
+                                <p>Email: {user.email}</p>
+                              )}
+                              <p className="text-xs text-gray-400 truncate max-w-[400px]">ID: {user.id}</p>
+                            </div>
+                          </div>
+                          <div className="ml-4 flex items-center gap-2">
+                            <Select
+                              value={user.role || 'user'}
+                              onValueChange={async (newRole) => {
+                                try {
+                                  // Kiểm tra và refresh session trước
+                                  let { data: { session }, error: sessionError } = await supabase.auth.getSession()
+                                  
+                                  // Nếu không có session, thử refresh
+                                  if (!session) {
+                                    console.log('No session found, trying to refresh...')
+                                    const { data: { user } } = await supabase.auth.getUser()
+                                    if (user) {
+                                      // User vẫn tồn tại, refresh session
+                                      const { data: { session: newSession } } = await supabase.auth.refreshSession()
+                                      session = newSession
+                                    }
+                                  }
+                                  
+                                  if (sessionError) {
+                                    console.error('Session error:', sessionError)
+                                    toast({
+                                      title: 'Lỗi',
+                                      description: 'Lỗi xác thực. Vui lòng đăng nhập lại.',
+                                      variant: 'destructive'
+                                    })
+                                    return
+                                  }
+
+                                  if (!session) {
+                                    toast({
+                                      title: 'Lỗi',
+                                      description: 'Bạn chưa đăng nhập. Vui lòng đăng nhập lại.',
+                                      variant: 'destructive'
+                                    })
+                                    return
+                                  }
+
+                                  console.log('Sending request with session:', {
+                                    hasSession: !!session,
+                                    userId: session.user.id,
+                                    expiresAt: session.expires_at,
+                                    accessToken: session.access_token ? 'present' : 'missing',
+                                    accessTokenLength: session.access_token?.length || 0
+                                  })
+
+                                  // Gửi cả cookies và Authorization header để đảm bảo
+                                  const headers: HeadersInit = {
+                                    'Content-Type': 'application/json'
+                                  }
+                                  
+                                  // Thêm Authorization header nếu có access token
+                                  if (session.access_token) {
+                                    headers['Authorization'] = `Bearer ${session.access_token}`
+                                    console.log('Added Authorization header, token length:', session.access_token.length)
+                                  } else {
+                                    console.warn('⚠️ No access_token in session! Cannot send Authorization header.')
+                                  }
+
+                                  const response = await fetch('/api/admin/update-profile', {
+                                    method: 'POST',
+                                    headers,
+                                    credentials: 'include', // Quan trọng: gửi cookies
+                                    body: JSON.stringify({
+                                      userId: user.id,
+                                      role: newRole,
+                                      fullName: user.full_name
+                                    })
+                                  })
+                                  
+                                  console.log('Response status:', response.status, response.statusText)
+
+                                  if (!response.ok) {
+                                    const errorData = await response.json().catch(() => ({}))
+                                    console.error('API Error:', errorData)
+                                    
+                                    // Nếu là lỗi role không được hỗ trợ
+                                    if (errorData.code === 'ROLE_NOT_SUPPORTED') {
+                                      toast({
+                                        title: 'Lỗi: Role không được hỗ trợ',
+                                        description: errorData.error || 'Database chưa hỗ trợ role này. Vui lòng chạy SQL migration.',
+                                        variant: 'destructive',
+                                        duration: 10000 // Hiển thị lâu hơn
+                                      })
+                                      throw new Error(errorData.error || 'Role không được hỗ trợ')
+                                    }
+                                    
+                                    throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
+                                  }
+
+                                  const result = await response.json()
+
+                                  if (result.success) {
+                                    toast({
+                                      title: 'Thành công',
+                                      description: `Đã cập nhật vai trò thành ${newRole === 'admin' ? 'Quản trị viên' : newRole === 'editor' ? 'Biên tập viên' : 'Người dùng'}`
+                                    })
+                                    fetchUsers()
+                                  } else {
+                                    throw new Error(result.error || 'Cập nhật thất bại')
+                                  }
+                                } catch (error: any) {
+                                  console.error('Error updating role:', error)
+                                  
+                                  // Hiển thị error message chi tiết hơn
+                                  let errorMessage = error.message || 'Không thể cập nhật vai trò'
+                                  
+                                  // Nếu là lỗi về role không hỗ trợ
+                                  if (error.message && error.message.includes('Role') && error.message.includes('không được hỗ trợ')) {
+                                    errorMessage = error.message + '\n\nVui lòng chạy file: database/add-editor-role-recommended.sql trong Supabase SQL Editor'
+                                  }
+                                  
+                                  toast({
+                                    title: 'Lỗi',
+                                    description: errorMessage,
+                                    variant: 'destructive',
+                                    duration: 10000
+                                  })
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="w-40">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="user">Người dùng</SelectItem>
+                                <SelectItem value="editor">Biên tập viên</SelectItem>
+                                <SelectItem value="admin">Quản trị viên</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            
+                            {/* Nút xóa user - chỉ admin mới thấy và chỉ xóa được user có quyền thấp hơn */}
+                            {(() => {
+                              // Debug: log để kiểm tra
+                              console.log('Checking delete button for user:', {
+                                currentUserRole: currentUser?.role,
+                                currentUserId: currentUser?.id,
+                                targetUserRole: user.role,
+                                targetUserId: user.id,
+                                isAdmin: currentUser?.role === 'admin',
+                                isSameUser: user.id === currentUser?.id
+                              })
+                              
+                              // Chỉ admin mới thấy nút
+                              if (!currentUser || currentUser.role !== 'admin') {
+                                console.log('❌ Not showing delete button: not admin')
+                                return null
+                              }
+                              
+                              // Không cho xóa chính mình
+                              if (user.id === currentUser.id) {
+                                console.log('❌ Not showing delete button: same user')
+                                return null
+                              }
+                              
+                              // Tính level quyền: admin=3, editor=2, user=1
+                              const currentLevel = currentUser.role === 'admin' ? 3 : currentUser.role === 'editor' ? 2 : 1
+                              const targetLevel = user.role === 'admin' ? 3 : user.role === 'editor' ? 2 : 1
+                              
+                              // Chỉ xóa được user có quyền thấp hơn
+                              if (currentLevel <= targetLevel) {
+                                console.log('❌ Not showing delete button: target level too high', { currentLevel, targetLevel })
+                                return null
+                              }
+                              
+                              console.log('✅ Showing delete button')
+                              return (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={async () => {
+                                    if (!confirm(`⚠️ Bạn có chắc chắn muốn XÓA user "${user.full_name || user.email || user.id}"?\n\nHành động này KHÔNG THỂ hoàn tác!`)) {
+                                      return
+                                    }
+
+                                    try {
+                                      const { data: { session } } = await supabase.auth.getSession()
+                                      if (!session) {
+                                        toast({
+                                          title: 'Lỗi',
+                                          description: 'Bạn cần đăng nhập',
+                                          variant: 'destructive'
+                                        })
+                                        return
+                                      }
+
+                                      const headers: HeadersInit = {
+                                        'Content-Type': 'application/json'
+                                      }
+                                      
+                                      if (session.access_token) {
+                                        headers['Authorization'] = `Bearer ${session.access_token}`
+                                      }
+
+                                      const response = await fetch(`/api/admin/delete-user?userId=${user.id}`, {
+                                        method: 'DELETE',
+                                        headers,
+                                        credentials: 'include'
+                                      })
+
+                                      if (!response.ok) {
+                                        const errorData = await response.json().catch(() => ({}))
+                                        throw new Error(errorData.error || `HTTP ${response.status}`)
+                                      }
+
+                                      const result = await response.json()
+
+                                      if (result.success) {
+                                        toast({
+                                          title: '✅ Thành công',
+                                          description: result.message || 'Đã xóa user thành công'
+                                        })
+                                        fetchUsers()
+                                      } else {
+                                        throw new Error(result.error || 'Xóa user thất bại')
+                                      }
+                                    } catch (error: any) {
+                                      console.error('Error deleting user:', error)
+                                      toast({
+                                        title: '❌ Lỗi',
+                                        description: error.message || 'Không thể xóa user',
+                                        variant: 'destructive'
+                                      })
+                                    }
+                                  }}
+                                  className="text-red-600 border-red-300 hover:bg-red-50 hover:border-red-400"
+                                  title={`Xóa ${user.full_name || user.email || 'user'}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )
+                            })()}
                           </div>
                         </div>
                       </div>

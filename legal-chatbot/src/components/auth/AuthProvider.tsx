@@ -64,6 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        console.log('Auth state changed:', event, session ? 'has session' : 'no session')
+        
+        // Xử lý PASSWORD_RECOVERY event
+        if (event === 'PASSWORD_RECOVERY' && session) {
+          console.log('Password recovery event detected')
+          // Không redirect ở đây, để page.tsx xử lý
+        }
+        
         // Bỏ qua lỗi refresh token trong event listener
         if (event === 'TOKEN_REFRESHED' && !session) {
           // Token refresh failed, sign out user

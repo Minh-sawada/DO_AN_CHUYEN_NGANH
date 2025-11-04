@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { useToast } from '@/hooks/use-toast'
 import { Loader2, Scale, LogIn, UserPlus, Shield, Zap } from 'lucide-react'
+import { ForgotPasswordForm } from './ForgotPasswordForm'
 
 interface LoginFormProps {
   onSuccess?: () => void
@@ -15,11 +16,24 @@ interface LoginFormProps {
 
 export function LoginForm({ onSuccess }: LoginFormProps) {
   const [isLogin, setIsLogin] = useState(true)
+  const [showForgotPassword, setShowForgotPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(false)
   const { toast } = useToast()
+
+  // Hiển thị form quên mật khẩu
+  if (showForgotPassword) {
+    return (
+      <ForgotPasswordForm
+        onBack={() => setShowForgotPassword(false)}
+        onSuccess={() => {
+          // Có thể giữ form hoặc quay lại login
+        }}
+      />
+    )
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -133,9 +147,21 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </div>
           
           <div className="space-y-2">
-            <Label htmlFor="password" className="text-sm font-medium text-gray-700">
-              Mật khẩu
-            </Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className="text-sm font-medium text-gray-700">
+                Mật khẩu
+              </Label>
+              {isLogin && (
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={() => setShowForgotPassword(true)}
+                  className="text-xs text-blue-600 hover:text-blue-700 p-0 h-auto font-normal"
+                >
+                  Quên mật khẩu?
+                </Button>
+              )}
+            </div>
             <Input
               id="password"
               type="password"

@@ -42,8 +42,8 @@ export default function AdminPage() {
     )
   }
 
-  // Hiển thị thông báo nếu không có quyền admin
-  if (!profile || profile.role !== 'admin') {
+  // Hiển thị thông báo nếu không có quyền admin hoặc editor
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'editor')) {
     return (
       <div className="min-h-screen bg-gray-50">
         <Header />
@@ -65,7 +65,7 @@ export default function AdminPage() {
                   <AlertDescription>
                     {!profile 
                       ? 'Profile của bạn chưa được tạo. Vui lòng đăng xuất và đăng nhập lại.'
-                      : `Bạn hiện có vai trò: ${profile.role}. Vui lòng liên hệ quản trị viên để được cấp quyền admin.`
+                      : `Bạn hiện có vai trò: ${profile.role === 'admin' ? 'Quản trị viên' : profile.role === 'editor' ? 'Biên tập viên' : 'Người dùng'}. Trang này chỉ dành cho quản trị viên và biên tập viên.`
                     }
                   </AlertDescription>
                 </Alert>
