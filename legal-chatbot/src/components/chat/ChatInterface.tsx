@@ -9,6 +9,54 @@ import { Send, Loader2, FileText, ExternalLink, Brain, Info, X, Paperclip, Searc
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/components/auth/AuthProvider'
 
+// Type definitions for Speech Recognition API
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition
+    webkitSpeechRecognition: new () => SpeechRecognition
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  start(): void
+  stop(): void
+  onstart: ((this: SpeechRecognition, ev: Event) => any) | null
+  onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => any) | null
+  onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => any) | null
+  onend: ((this: SpeechRecognition, ev: Event) => any) | null
+}
+
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number
+  results: SpeechRecognitionResultList
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string
+  message?: string
+}
+
+interface SpeechRecognitionResultList {
+  length: number
+  item(index: number): SpeechRecognitionResult
+  [index: number]: SpeechRecognitionResult
+}
+
+interface SpeechRecognitionResult {
+  length: number
+  item(index: number): SpeechRecognitionAlternative
+  [index: number]: SpeechRecognitionAlternative
+  isFinal: boolean
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string
+  confidence: number
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -31,6 +79,13 @@ export function ChatInterface() {
   const [showLoginHint, setShowLoginHint] = useState(!user) // Hiển thị hint nếu chưa đăng nhập
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
+  
+  // Voice recognition states
+  const [isListening, setIsListening] = useState(false)
+  const [transcript, setTranscript] = useState('')
+  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastTranscriptTimeRef = useRef<number>(0)
 
   useEffect(() => {
     // Scroll to bottom when new messages are added
@@ -48,19 +103,297 @@ export function ChatInterface() {
     }
   }, [user])
 
+  // Initialize Speech Recognition
+  useEffect(() => {
+    // Check if browser supports Speech Recognition
+    const SpeechRecognition = window.SpeechRecognition || (window as any).webkitSpeechRecognition
+    
+    if (!SpeechRecognition) {
+      console.warn('Speech Recognition API không được hỗ trợ trong trình duyệt này')
+      return
+    }
+
+    console.log('Đang khởi tạo Speech Recognition...')
+    const recognition = new SpeechRecognition()
+    recognition.continuous = false // Đổi sang false để tránh lặp lại
+    recognition.interimResults = true
+    recognition.lang = 'vi-VN' // Vietnamese language
+
+    recognition.onstart = () => {
+      console.log('Speech Recognition đã bắt đầu')
+      setIsListening(true)
+      setTranscript('')
+      lastTranscriptTimeRef.current = Date.now()
+      
+      // Reset timeout
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current)
+      }
+      
+      // Tự động tắt sau 3 giây không có giọng nói
+      silenceTimeoutRef.current = setTimeout(() => {
+        console.log('Hết thời gian chờ (3 giây không có giọng nói), tự động dừng...')
+        if (recognitionRef.current && isListening) {
+          recognitionRef.current.stop()
+        }
+      }, 3000)
+      
+      toast({
+        title: 'Đang nghe...',
+        description: 'Nói câu hỏi của bạn vào microphone (tự động tắt sau 3 giây im lặng).',
+        duration: 3000,
+      })
+    }
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      // Reset timeout mỗi khi có kết quả
+      lastTranscriptTimeRef.current = Date.now()
+      
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current)
+      }
+      
+      // Set lại timeout 3 giây
+      silenceTimeoutRef.current = setTimeout(() => {
+        console.log('Hết thời gian chờ (3 giây không có giọng nói), tự động dừng...')
+        if (recognitionRef.current && isListening) {
+          recognitionRef.current.stop()
+        }
+      }, 3000)
+      
+      let interimTranscript = ''
+      let finalTranscript = ''
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript + ' '
+        } else {
+          interimTranscript += transcript
+        }
+      }
+
+      if (finalTranscript) {
+        setInput(prev => {
+          // Tránh lặp lại text bằng cách kiểm tra text cuối cùng
+          const trimmed = finalTranscript.trim()
+          if (prev.endsWith(trimmed)) {
+            return prev // Không thêm nếu đã có
+          }
+          return prev + (prev ? ' ' : '') + trimmed
+        })
+        setTranscript('')
+      } else {
+        setTranscript(interimTranscript)
+      }
+    }
+
+    recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+      console.error('Speech recognition error:', event.error)
+      setIsListening(false)
+      
+      if (event.error === 'no-speech') {
+        toast({
+          title: 'Không phát hiện giọng nói',
+          description: 'Không có âm thanh được phát hiện. Vui lòng nói lại.',
+          variant: 'destructive',
+          duration: 3000,
+        })
+      } else if (event.error === 'not-allowed') {
+        const isHttp = window.location.protocol === 'http:'
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        
+        let description = 'Trình duyệt không cho phép truy cập microphone. '
+        
+        if (isHttp && !isLocalhost) {
+          description += 'VẤN ĐỀ: Bạn đang dùng HTTP với IP. Trình duyệt chặn microphone trên HTTP. '
+          description += 'GIẢI PHÁP: 1) Dùng localhost:3000 thay vì IP, hoặc 2) Chạy "npm run dev:https" để dùng HTTPS. '
+          description += 'Xem file HTTPS_SETUP.md để biết chi tiết.'
+        } else if (isHttp && isLocalhost) {
+          description += 'Cách khắc phục: 1) Click nút "Đặt lại quyền", 2) Refresh trang, 3) Click "Giọng nói" lại và chọn "Cho phép".'
+        } else {
+          description += 'Cách khắc phục: 1) Click nút "Đặt lại quyền" ở trang cài đặt, 2) Refresh trang (F5), 3) Click "Giọng nói" lại và chọn "Cho phép".'
+        }
+        
+        toast({
+          title: 'Quyền truy cập microphone bị từ chối',
+          description,
+          variant: 'destructive',
+          duration: 12000,
+        })
+      } else if (event.error === 'aborted') {
+        // Không hiển thị toast cho lỗi aborted (người dùng tự dừng)
+      } else {
+        toast({
+          title: 'Lỗi nhận diện giọng nói',
+          description: `Lỗi: ${event.error}. Vui lòng thử lại.`,
+          variant: 'destructive',
+          duration: 4000,
+        })
+      }
+    }
+
+    recognition.onend = () => {
+      console.log('Speech Recognition đã kết thúc')
+      setIsListening(false)
+      
+      // Clear timeout
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current)
+        silenceTimeoutRef.current = null
+      }
+      
+      // Nếu có transcript tạm thời, thêm vào input
+      if (transcript) {
+        setInput(prev => {
+          const trimmed = transcript.trim()
+          if (prev.endsWith(trimmed)) {
+            return prev
+          }
+          return prev + (prev ? ' ' : '') + trimmed
+        })
+      }
+      
+      setTranscript('')
+    }
+
+    recognitionRef.current = recognition
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop()
+      }
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current)
+      }
+    }
+  }, [toast])
+
+  // Check microphone permission
+  const checkMicrophonePermission = async (): Promise<boolean> => {
+    try {
+      if (navigator.permissions) {
+        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+        if (result.state === 'denied') {
+          toast({
+            title: 'Quyền truy cập bị từ chối',
+            description: 'Vui lòng click "Đặt lại quyền" ở trang cài đặt, sau đó refresh trang và thử lại.',
+            variant: 'destructive',
+            duration: 6000,
+          })
+          return false
+        }
+        return result.state === 'granted'
+      }
+      return true
+    } catch (error) {
+      // Permission API không được hỗ trợ, tiếp tục thử
+      return true
+    }
+  }
+
+  // Toggle voice recognition
+  const toggleVoiceRecognition = async () => {
+    console.log('Click vào nút Giọng nói')
+    console.log('recognitionRef.current:', recognitionRef.current)
+    console.log('isListening:', isListening)
+    
+    if (!recognitionRef.current) {
+      console.error('Speech Recognition chưa được khởi tạo')
+      toast({
+        title: 'Trình duyệt không hỗ trợ',
+        description: 'Trình duyệt của bạn không hỗ trợ nhận diện giọng nói. Vui lòng dùng Chrome hoặc Edge.',
+        variant: 'destructive',
+        duration: 5000,
+      })
+      return
+    }
+
+    if (isListening) {
+      console.log('Dừng recognition...')
+      recognitionRef.current.stop()
+      setIsListening(false)
+      // Nếu có transcript tạm thời, thêm vào input
+      if (transcript) {
+        setInput(prev => prev + ' ' + transcript)
+        setTranscript('')
+      }
+      toast({
+        title: 'Đã dừng ghi âm',
+        description: 'Text đã được thêm vào ô nhập.',
+        duration: 2000,
+      })
+    } else {
+      console.log('Bắt đầu recognition...')
+      toast({
+        title: 'Đang khởi động...',
+        description: 'Đang yêu cầu quyền truy cập microphone...',
+        duration: 2000,
+      })
+      
+      // Kiểm tra quyền để hiển thị cảnh báo, nhưng vẫn thử start()
+      const hasPermission = await checkMicrophonePermission()
+      console.log('hasPermission:', hasPermission)
+      
+      // Chú ý: Ngay cả khi permission API trả về false, vẫn thử start()
+      // vì trình duyệt sẽ tự động hỏi quyền khi start() được gọi
+      // Nếu quyền đã bị từ chối, start() sẽ throw error và chúng ta xử lý ở catch
+
+      try {
+        console.log('Gọi recognition.start()...')
+        recognitionRef.current.start()
+        console.log('recognition.start() đã được gọi - đợi trình duyệt hỏi quyền...')
+      } catch (error: any) {
+        console.error('Error starting recognition:', error)
+        console.error('Error name:', error.name)
+        console.error('Error message:', error.message)
+        
+        // Xử lý lỗi cụ thể
+        if (error.name === 'NotAllowedError' || error.message?.includes('not allowed')) {
+          toast({
+            title: 'Cần quyền truy cập microphone',
+            description: 'Vui lòng cho phép truy cập microphone trong popup trình duyệt hoặc cài đặt trang web.',
+            variant: 'destructive',
+            duration: 6000,
+          })
+        } else {
+          toast({
+            title: 'Lỗi',
+            description: `Không thể bắt đầu nhận diện giọng nói: ${error.message || error.name}. Mở Console (F12) để xem chi tiết.`,
+            variant: 'destructive',
+            duration: 6000,
+          })
+        }
+      }
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    
+    // Nếu đang nghe, dừng lại và thêm transcript vào input
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop()
+      if (transcript) {
+        setInput(prev => prev + ' ' + transcript)
+        setTranscript('')
+      }
+      return
+    }
+    
+    const finalInput = input.trim() + (transcript ? ' ' + transcript.trim() : '')
+    if (!finalInput || isLoading) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: finalInput,
       timestamp: new Date()
     }
 
     setMessages(prev => [...prev, userMessage])
     setInput('')
+    setTranscript('')
     setIsLoading(true)
 
     try {
@@ -254,9 +587,9 @@ export function ChatInterface() {
           <form onSubmit={handleSubmit} className="flex items-end gap-2 mb-2">
             <div className="flex-1 relative">
               <Textarea
-                value={input}
+                value={input + (transcript ? ' ' + transcript : '')}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Nhập câu hỏi về pháp luật..."
+                placeholder={isListening ? "Đang nghe..." : "Nhập câu hỏi về pháp luật..."}
                 className="w-full min-h-[52px] max-h-[200px] resize-none border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-2xl pr-12 py-3 px-4 text-sm transition-all bg-white"
                 disabled={isLoading}
                 onKeyDown={(e) => {
@@ -266,6 +599,12 @@ export function ChatInterface() {
                   }
                 }}
               />
+              {isListening && (
+                <div className="absolute right-3 top-3 flex items-center">
+                  <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></div>
+                  <span className="text-xs text-gray-500">Đang nghe...</span>
+                </div>
+              )}
             </div>
             <Button
               type="submit"
@@ -319,10 +658,15 @@ export function ChatInterface() {
               type="button"
               variant="ghost"
               size="sm"
-              className="h-8 px-3 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+              onClick={toggleVoiceRecognition}
+              className={`h-8 px-3 text-xs ${
+                isListening 
+                  ? 'bg-red-100 text-red-600 hover:bg-red-200' 
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+              }`}
             >
-              <Mic className="h-4 w-4 mr-1.5" />
-              Giọng nói
+              <Mic className={`h-4 w-4 mr-1.5 ${isListening ? 'animate-pulse' : ''}`} />
+              {isListening ? 'Đang nghe...' : 'Giọng nói'}
             </Button>
           </div>
         </div>

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:https": "node scripts/dev-https.js",
     "dev:clean": "npm run clean && npm run dev",
     "clean": "powershell -Command \"Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force node_modules/.cache -ErrorAction SilentlyContinue\"",
     "build": "next build --turbopack",
