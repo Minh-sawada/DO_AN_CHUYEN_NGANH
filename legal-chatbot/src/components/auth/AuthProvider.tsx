@@ -28,10 +28,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const { data: { session }, error } = await supabase.auth.getSession()
         
-        // Nếu có lỗi về refresh token, clear session
-        if (error && (error.message.includes('Refresh Token') || error.message.includes('JWT'))) {
-          console.warn('Invalid session, clearing...', error.message)
-          await supabase.auth.signOut()
+        // Nếu có lỗi về refresh token, clear session (không log error để tránh spam console)
+        if (error && (error.message.includes('Refresh Token') || error.message.includes('refresh_token') || error.message.includes('JWT'))) {
+          // Silently clear invalid session
+          try {
+            await supabase.auth.signOut()
+          } catch (e) {
+            // Ignore signOut errors
+          }
           setSession(null)
           setUser(null)
           setProfile(null)
@@ -46,14 +50,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await fetchProfile(session.user.id)
         }
       } catch (error: any) {
-        console.error('Error getting session:', error)
-        // Nếu lỗi về token, clear session
-        if (error?.message?.includes('Refresh Token') || error?.message?.includes('JWT')) {
-          await supabase.auth.signOut()
+        // Nếu lỗi về token, clear session (không log để tránh spam console)
+        if (error?.message?.includes('Refresh Token') || error?.message?.includes('refresh_token') || error?.message?.includes('JWT')) {
+          try {
+            await supabase.auth.signOut()
+          } catch (e) {
+            // Ignore signOut errors
+          }
+          setSession(null)
+          setUser(null)
+          setProfile(null)
+        } else {
+          // Chỉ log lỗi khác
+          console.error('Error getting session:', error)
         }
-        setSession(null)
-        setUser(null)
-        setProfile(null)
       } finally {
         setLoading(false)
       }
