@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:https": "node scripts/dev-https.js",
+    "generate-cert": "node scripts/generate-cert.js",
+    "cert:quick": "npm run generate-cert && npm run dev:https",
     "dev:clean": "npm run clean && npm run dev",
     "clean": "powershell -Command \"Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force node_modules/.cache -ErrorAction SilentlyContinue\"",
     "build": "next build --turbopack",
@@ -58,9 +61,11 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.21",
+    "devcert": "^1.2.2",
     "eslint": "^9",
     "eslint-config-next": "15.5.3",
     "postcss": "^8.5.6",
+    "selfsigned": "^2.4.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"
   }

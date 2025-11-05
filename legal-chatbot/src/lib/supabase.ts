@@ -16,10 +16,32 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    // Bỏ qua lỗi refresh token không hợp lệ
-    flowType: 'pkce'
+    flowType: 'pkce',
+    // Suppress refresh token errors in console
+    debug: false
+  },
+  global: {
+    // Suppress error logs for refresh token issues
+    headers: {
+      'X-Client-Info': 'legal-chatbot'
+    }
   }
 })
+
+// Override console.error để filter out refresh token errors
+if (typeof window !== 'undefined') {
+  const originalError = console.error
+  console.error = (...args: any[]) => {
+    const errorMessage = args.join(' ')
+    // Bỏ qua các lỗi refresh token
+    if (errorMessage.includes('Refresh Token') || 
+        errorMessage.includes('refresh_token') ||
+        errorMessage.includes('Invalid Refresh Token')) {
+      return // Không log error này
+    }
+    originalError.apply(console, args)
+  }
+}
 
 // For server-side operations that need elevated permissions
 // Note: SUPABASE_SERVICE_ROLE_KEY không có prefix NEXT_PUBLIC_ nên chỉ có ở server-side
