@@ -55,8 +55,29 @@ export async function middleware(req: NextRequest) {
     }
   )
 
-  // Get session
-  const { data: { session } } = await supabase.auth.getSession()
+  // Get session with error handling for invalid refresh tokens
+  let session = null
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    session = data?.session ?? null
+    
+    // Nếu có lỗi về refresh token, bỏ qua và coi như không có session
+    if (error && (error.message.includes('Refresh Token') || error.message.includes('refresh_token'))) {
+      console.warn('Invalid refresh token in middleware, clearing session:', error.message)
+      // Clear invalid session
+      await supabase.auth.signOut()
+      session = null
+    }
+  } catch (error: any) {
+    // Bỏ qua lỗi refresh token, coi như không có session
+    if (error?.message?.includes('Refresh Token') || error?.message?.includes('refresh_token')) {
+      console.warn('Refresh token error in middleware, ignoring:', error.message)
+      session = null
+    } else {
+      // Re-throw nếu không phải lỗi refresh token
+      throw error
+    }
+  }
   
   // Protect upload API routes
   if (req.nextUrl.pathname.startsWith('/api/upload')) {
@@ -64,7 +85,7 @@ export async function middleware(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized - Please login first' }, { status: 401 })
     }
     
-    // Check if user is admin for upload operations
+    // Check if user is admin or editor for upload operations
     if (req.nextUrl.pathname.includes('upload-direct') || req.nextUrl.pathname.includes('upload-simple')) {
       const { data: profile } = await supabase
         .from('profiles')
@@ -72,14 +93,14 @@ export async function middleware(req: NextRequest) {
         .eq('id', session.user.id)
         .single()
       
-      if (!profile || profile.role !== 'admin') {
-        return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 })
+      if (!profile || (profile.role !== 'admin' && profile.role !== 'editor')) {
+        return NextResponse.json({ error: 'Forbidden - Admin or Editor access required' }, { status: 403 })
       }
     }
   }
   
-  // Protect admin API routes
-  if (req.nextUrl.pathname.startsWith('/api/admin')) {
+  // Protect laws upload/update routes (allow admin and editor)
+  if (req.nextUrl.pathname.startsWith('/api/laws/upload')) {
     if (!session) {
       return NextResponse.json({ error: 'Unauthorized - Please login first' }, { status: 401 })
     }
@@ -90,10 +111,17 @@ export async function middleware(req: NextRequest) {
       .eq('id', session.user.id)
       .single()
     
-    if (!profile || profile.role !== 'admin') {
-      return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 })
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'editor')) {
+      return NextResponse.json({ error: 'Forbidden - Admin or Editor access required' }, { status: 403 })
     }
   }
+  
+  // Protect admin API routes
+  // Để API route tự xử lý authentication (API route có check đầy đủ hơn)
+  // Bỏ middleware check để tránh conflict với cookies
+  // if (req.nextUrl.pathname.startsWith('/api/admin')) {
+  //   // API route sẽ tự check authentication và role
+  // }
   
   return response
 }
@@ -101,6 +129,7 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: [
     '/api/upload/:path*',
-    '/api/admin/:path*'
+    // '/api/admin/:path*', // Bỏ middleware check, để API route tự xử lý
+    '/api/laws/upload/:path*'
   ]
 }

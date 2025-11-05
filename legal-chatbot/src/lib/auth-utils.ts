@@ -26,8 +26,27 @@ export async function createSupabaseServerClient() {
 
 export async function getServerSession() {
   const supabase = await createSupabaseServerClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  return session
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    
+    // Nếu có lỗi về refresh token, bỏ qua và trả về null
+    if (error && (error.message.includes('Refresh Token') || error.message.includes('refresh_token'))) {
+      console.warn('Invalid refresh token in getServerSession, returning null:', error.message)
+      // Clear invalid session
+      await supabase.auth.signOut()
+      return null
+    }
+    
+    return data?.session ?? null
+  } catch (error: any) {
+    // Bỏ qua lỗi refresh token, trả về null
+    if (error?.message?.includes('Refresh Token') || error?.message?.includes('refresh_token')) {
+      console.warn('Refresh token error in getServerSession, returning null:', error.message)
+      return null
+    }
+    // Re-throw nếu không phải lỗi refresh token
+    throw error
+  }
 }
 
 export async function requireAuth() {
@@ -53,4 +72,25 @@ export async function requireAdmin() {
   }
   
   return { session, profile }
+}
+
+export async function requireEditor() {
+  const { session } = await requireAuth()
+  const supabase = await createSupabaseServerClient()
+  
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', session.user.id)
+    .single()
+  
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'editor')) {
+    throw new Error('Forbidden - Editor or Admin access required')
+  }
+  
+  return { session, profile }
+}
+
+export async function requireAdminOrEditor() {
+  return requireEditor()
 }

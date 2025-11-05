@@ -93,21 +93,21 @@ export interface Database {
         Row: {
           id: string // UUID
           full_name: string | null
-          role: string // 'admin' | 'user'
+          role: string // 'admin' | 'editor' | 'user'
           created_at: string
           updated_at: string
         }
         Insert: {
           id: string // UUID
           full_name?: string | null
-          role?: string // 'admin' | 'user', default 'user'
+          role?: string // 'admin' | 'editor' | 'user', default 'user'
           created_at?: string
           updated_at?: string
         }
         Update: {
           id?: string
           full_name?: string | null
-          role?: string // 'admin' | 'user'
+          role?: string // 'admin' | 'editor' | 'user'
           created_at?: string
           updated_at?: string
         }
