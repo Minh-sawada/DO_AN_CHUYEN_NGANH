@@ -55,8 +55,29 @@ export async function middleware(req: NextRequest) {
     }
   )
 
-  // Get session
-  const { data: { session } } = await supabase.auth.getSession()
+  // Get session with error handling for invalid refresh tokens
+  let session = null
+  try {
+    const { data, error } = await supabase.auth.getSession()
+    session = data?.session ?? null
+    
+    // Nếu có lỗi về refresh token, bỏ qua và coi như không có session
+    if (error && (error.message.includes('Refresh Token') || error.message.includes('refresh_token'))) {
+      console.warn('Invalid refresh token in middleware, clearing session:', error.message)
+      // Clear invalid session
+      await supabase.auth.signOut()
+      session = null
+    }
+  } catch (error: any) {
+    // Bỏ qua lỗi refresh token, coi như không có session
+    if (error?.message?.includes('Refresh Token') || error?.message?.includes('refresh_token')) {
+      console.warn('Refresh token error in middleware, ignoring:', error.message)
+      session = null
+    } else {
+      // Re-throw nếu không phải lỗi refresh token
+      throw error
+    }
+  }
   
   // Protect upload API routes
   if (req.nextUrl.pathname.startsWith('/api/upload')) {
