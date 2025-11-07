@@ -118,6 +118,32 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
+    // Log update profile action (user tự update profile của mình)
+    try {
+      const clientIP = request.headers.get('x-forwarded-for') || 
+                      request.headers.get('x-real-ip') || 
+                      'unknown'
+      const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+      await supabaseAdmin.rpc('log_user_activity', {
+        p_user_id: user.id,
+        p_activity_type: 'update',
+        p_action: 'update_profile',
+        p_details: {
+          updated_fields: {
+            full_name: full_name !== undefined,
+            avatar_url: avatar_url !== undefined
+          }
+        },
+        p_ip_address: clientIP,
+        p_user_agent: clientUserAgent,
+        p_risk_level: 'low'
+      } as any)
+    } catch (logError) {
+      console.error('Failed to log update profile activity:', logError)
+      // Không throw - logging không nên làm gián đoạn flow chính
+    }
+
     return NextResponse.json({
       success: true,
       profile: data

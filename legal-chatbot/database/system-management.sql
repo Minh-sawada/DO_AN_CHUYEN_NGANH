@@ -344,3 +344,7 @@ FROM suspicious_activities sa
 LEFT JOIN profiles p ON sa.user_id = p.id
 ORDER BY sa.risk_score DESC, sa.created_at DESC;
 
+-- 5. Bảng system_logs - ĐÃ XÓA (không cần thiết)
+-- Chỉ dùng 2 bảng: query_logs và user_activities
+-- system_logs không cần vì user_activities đã đủ cho tất cả hoạt động user
+

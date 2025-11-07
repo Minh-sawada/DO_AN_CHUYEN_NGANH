@@ -95,6 +95,48 @@ export async function POST(request: NextRequest) {
       console.error('Error logging query:', logError)
     }
 
+    // 4. Log activity vào user_activities
+    if (userId) {
+      try {
+        const clientIP = request.headers.get('x-forwarded-for') || 
+                        request.headers.get('x-real-ip') || 
+                        'unknown'
+        const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+        console.log('Logging chat activity:', {
+          userId,
+          query: query.substring(0, 100),
+          sourcesCount: sources.length
+        })
+
+        const { data, error: logError } = await supabase.rpc('log_user_activity', {
+          p_user_id: userId,
+          p_activity_type: 'query',
+          p_action: 'chat_query',
+          p_details: {
+            query: query.substring(0, 500), // Giới hạn độ dài query
+            sourcesCount: sources.length,
+            searchMethod: localResults && localResults.length > 0 ? 'local' : 'external',
+            matchedIds: matched_ids
+          },
+          p_ip_address: clientIP,
+          p_user_agent: clientUserAgent,
+          p_risk_level: 'low'
+        } as any)
+
+        if (logError) {
+          console.error('Failed to log chat activity:', logError)
+        } else {
+          console.log('✅ Chat activity logged successfully:', data)
+        }
+      } catch (logError) {
+        console.error('Failed to log chat activity:', logError)
+        // Không throw - logging không nên làm gián đoạn flow chính
+      }
+    } else {
+      console.log('⚠️ No user_id found, skipping logging')
+    }
+
     return NextResponse.json({
       response: response,
       sources: sources,

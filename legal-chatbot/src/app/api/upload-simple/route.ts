@@ -1,8 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+// Helper function để lấy user_id từ request (từ cookies)
+async function getUserIdFromRequest(request: NextRequest): Promise<string | null> {
+  try {
+    // Thử lấy từ authorization header trước
+    const authHeader = request.headers.get('authorization')
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '')
+      const { createClient } = await import('@supabase/supabase-js')
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      
+      const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        }
+      })
+
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (!error && user) return user.id
+    }
+
+    // Nếu không có authorization header, lấy từ cookies
+    const cookieStore = await cookies()
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    
+    const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            cookieStore.set(name, value, options)
+          })
+        },
+      },
+    })
+
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error || !user) {
+      console.log('No user found in cookies:', error?.message)
+      return null
+    }
+
+    return user.id
+  } catch (error) {
+    console.error('Error getting user from request:', error)
+    return null
+  }
+}
 
 export async function POST(request: NextRequest) {
+  let userId: string | null = null
+  
   try {
+    // Lấy user_id từ request
+    userId = await getUserIdFromRequest(request)
+    
     const formData = await request.formData()
     const file = formData.get('file') as File
     const title = formData.get('title') as string
@@ -11,7 +72,8 @@ export async function POST(request: NextRequest) {
       fileName: file?.name,
       fileSize: file?.size,
       fileType: file?.type,
-      title: title
+      title: title,
+      userId: userId
     })
 
     if (!file) {
@@ -76,13 +138,56 @@ export async function POST(request: NextRequest) {
           loai_van_ban: 'Văn bản upload',
           so_hieu: articleReference || `UP-${Date.now()}-${i}`,
           embedding: dummyEmbedding
-        })
+        } as any)
 
       if (error) {
         console.error('Database error:', error)
         continue // Continue to next chunk even if one fails
       }
       processedChunks++
+    }
+
+    // Log activity sau khi upload thành công
+    if (userId) {
+      try {
+        const clientIP = request.headers.get('x-forwarded-for') || 
+                        request.headers.get('x-real-ip') || 
+                        'unknown'
+        const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+        console.log('Logging upload activity:', {
+          userId,
+          fileName: file.name,
+          chunksProcessed: processedChunks
+        })
+
+        const { data, error: logError } = await supabaseAdmin.rpc('log_user_activity', {
+          p_user_id: userId,
+          p_activity_type: 'upload',
+          p_action: 'upload_document',
+          p_details: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            title: title || file.name.replace(/\.[^/.]+$/, ''),
+            chunksProcessed: processedChunks
+          },
+          p_ip_address: clientIP,
+          p_user_agent: clientUserAgent,
+          p_risk_level: 'low'
+        } as any)
+
+        if (logError) {
+          console.error('Failed to log upload activity:', logError)
+        } else {
+          console.log('✅ Upload activity logged successfully:', data)
+        }
+      } catch (logError) {
+        console.error('Failed to log upload activity:', logError)
+        // Không throw - logging không nên làm gián đoạn flow chính
+      }
+    } else {
+      console.log('⚠️ No user_id found, skipping logging')
     }
 
     return NextResponse.json({ 

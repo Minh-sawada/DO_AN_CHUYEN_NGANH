@@ -187,6 +187,36 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Lấy thông tin target user để log (dùng data sau khi update)
+    const targetUserName = data?.full_name || undefined
+
+    // Log update profile action
+    try {
+      const clientIP = request.headers.get('x-forwarded-for') || 
+                      request.headers.get('x-real-ip') || 
+                      'unknown'
+      const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+      await supabaseAdmin.rpc('log_user_activity', {
+        p_user_id: user.id,
+        p_activity_type: 'admin_action',
+        p_action: 'update_user_profile',
+        p_details: {
+          target_user_id: userId,
+          target_user_name: targetUserName,
+          old_role: (profile as any)?.role,
+          new_role: role,
+          full_name: fullName || undefined
+        },
+        p_ip_address: clientIP,
+        p_user_agent: clientUserAgent,
+        p_risk_level: 'medium' // Update role là hành động quan trọng
+      } as any)
+    } catch (logError) {
+      console.error('Failed to log update profile activity:', logError)
+      // Không throw - logging không nên làm gián đoạn flow chính
+    }
+
     return NextResponse.json({
       success: true,
       profile: data

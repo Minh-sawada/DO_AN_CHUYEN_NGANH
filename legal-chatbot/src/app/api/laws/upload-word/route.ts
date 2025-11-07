@@ -1,5 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+// Helper function để lấy user_id từ request
+async function getUserIdFromRequest(req: NextRequest): Promise<string | null> {
+  try {
+    // Thử lấy từ authorization header trước
+    const authHeader = req.headers.get('authorization')
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '')
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          global: {
+            headers: {
+              Authorization: `Bearer ${token}`
+            }
+          }
+        }
+      )
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (!error && user) return user.id
+    }
+
+    // Nếu không có authorization header, lấy từ cookies
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options)
+            })
+          },
+        },
+      }
+    )
+    const { data: { user }, error } = await supabase.auth.getUser()
+    if (error || !user) return null
+    return user.id
+  } catch (error) {
+    return null
+  }
+}
 
 // Dynamic import cho các thư viện nặng
 // Đảm bảo route này chạy ở Node.js runtime, không phải Edge
@@ -580,6 +630,46 @@ export async function POST(req: NextRequest) {
 
       if (error) {
         throw new Error('Lỗi khi lưu vào database: ' + error.message)
+      }
+
+      // Log upload word file action (chỉ log nếu có user_id và user là admin/editor)
+      const userId = await getUserIdFromRequest(req)
+      if (userId) {
+        try {
+          // Kiểm tra role của user
+          const { data: userProfile } = await supabaseAdmin
+            .from('profiles')
+            .select('role')
+            .eq('id', userId)
+            .single()
+          
+          // Chỉ log nếu user là admin hoặc editor
+          if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'editor')) {
+            const clientIP = req.headers.get('x-forwarded-for') || 
+                            req.headers.get('x-real-ip') || 
+                            'unknown'
+            const clientUserAgent = req.headers.get('user-agent') || 'unknown'
+
+            await supabaseAdmin.rpc('log_user_activity', {
+              p_user_id: userId,
+              p_activity_type: 'admin_action',
+              p_action: 'upload_law_word',
+              p_details: {
+                fileName: file.name,
+                fileSize: file.size,
+                lawId: data.id,
+                title: data.title,
+                textLength: extractedText.length
+              },
+              p_ip_address: clientIP,
+              p_user_agent: clientUserAgent,
+              p_risk_level: 'medium' // Upload law là hành động quan trọng
+            } as any)
+          }
+        } catch (logError) {
+          console.error('Failed to log upload word activity:', logError)
+          // Không throw - logging không nên làm gián đoạn flow chính
+        }
       }
 
       return NextResponse.json({

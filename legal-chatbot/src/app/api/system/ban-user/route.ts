@@ -44,19 +44,33 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Log ban action
-    await supabaseAdmin.rpc('log_user_activity', {
-      p_user_id: banned_by,
-      p_activity_type: 'admin_action',
-      p_action: 'ban_user',
-      p_details: {
-        banned_user_id: user_id,
-        reason: reason,
-        ban_type: ban_type,
-        duration_hours: duration_hours
-      },
-      p_risk_level: 'low'
-    })
+    // Log ban action (chỉ log nếu banned_by là admin hoặc editor)
+    try {
+      const { data: userProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('role')
+        .eq('id', banned_by)
+        .single()
+      
+      // Chỉ log nếu user là admin hoặc editor
+      if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'editor')) {
+        await supabaseAdmin.rpc('log_user_activity', {
+          p_user_id: banned_by,
+          p_activity_type: 'admin_action',
+          p_action: 'ban_user',
+          p_details: {
+            banned_user_id: user_id,
+            reason: reason,
+            ban_type: ban_type,
+            duration_hours: duration_hours
+          },
+          p_risk_level: 'low'
+        })
+      }
+    } catch (logError) {
+      console.error('Failed to log ban action:', logError)
+      // Không throw - logging không nên làm gián đoạn flow chính
+    }
 
     return NextResponse.json({
       success: true,
@@ -99,17 +113,31 @@ export async function DELETE(req: NextRequest) {
       )
     }
 
-    // Log unban action
+    // Log unban action (chỉ log nếu unbannedBy là admin hoặc editor)
     if (unbannedBy) {
-      await supabaseAdmin.rpc('log_user_activity', {
-        p_user_id: unbannedBy,
-        p_activity_type: 'admin_action',
-        p_action: 'unban_user',
-        p_details: {
-          unbanned_user_id: userId
-        },
-        p_risk_level: 'low'
-      })
+      try {
+        const { data: userProfile } = await supabaseAdmin
+          .from('profiles')
+          .select('role')
+          .eq('id', unbannedBy)
+          .single()
+        
+        // Chỉ log nếu user là admin hoặc editor
+        if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'editor')) {
+          await supabaseAdmin.rpc('log_user_activity', {
+            p_user_id: unbannedBy,
+            p_activity_type: 'admin_action',
+            p_action: 'unban_user',
+            p_details: {
+              unbanned_user_id: userId
+            },
+            p_risk_level: 'low'
+          })
+        }
+      } catch (logError) {
+        console.error('Failed to log unban action:', logError)
+        // Không throw - logging không nên làm gián đoạn flow chính
+      }
     }
 
     return NextResponse.json({

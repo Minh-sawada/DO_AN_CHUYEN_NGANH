@@ -78,17 +78,24 @@ export function AdminDashboard() {
   })
   const [recentLaws, setRecentLaws] = useState<Law[]>([])
   const [loading, setLoading] = useState(true)
+  const [dataLoaded, setDataLoaded] = useState(false) // Track if data has been loaded
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month' | 'year'>('today')
   const [lawsPage, setLawsPage] = useState(1)
   const lawsPerPage = 5
 
   useEffect(() => {
-    fetchDashboardData()
-  }, [])
+    // Chỉ fetch nếu chưa load data lần nào
+    if (!dataLoaded) {
+      fetchDashboardData()
+    }
+  }, [dataLoaded])
 
   const fetchDashboardData = async () => {
     try {
-      setLoading(true)
+      // Chỉ set loading nếu chưa có data
+      if (!dataLoaded) {
+        setLoading(true)
+      }
       
       // Tính toán ngày 7 ngày trước
       const sevenDaysAgo = new Date()
@@ -208,6 +215,9 @@ export function AdminDashboard() {
 
       // Fetch time-based statistics (chạy sau để không block UI)
       fetchTimeStats()
+      
+      // Đánh dấu đã load data
+      setDataLoaded(true)
     } catch (error) {
       console.error('Error fetching dashboard data:', error)
     } finally {
@@ -506,7 +516,7 @@ export function AdminDashboard() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="font-medium text-sm truncate">
-                              {law.title || 'Không có tiêu đề'}
+                              {law.title || law.so_hieu || 'Văn bản pháp luật'}
                             </p>
                             <p className="text-xs text-gray-500">
                               {law.created_at ? new Date(law.created_at).toLocaleDateString('vi-VN') : 'N/A'}

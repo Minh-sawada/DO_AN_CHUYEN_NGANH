@@ -397,15 +397,18 @@ export function ChatInterface() {
     setIsLoading(true)
 
     try {
-      // Gửi đến n8n webhook thay vì API route
-      const response = await fetch(process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK || 'http://localhost:5678/webhook/chat', {
+      // Lấy user_id từ auth để log activity
+      const userId = user?.id || null
+      
+      // Gửi đến API route để có logging
+      const response = await fetch('/api/chat-enhanced', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           query: userMessage.content,
-          messages: messages
+          userId: userId // Gửi userId để log activity
         }),
       })
 
@@ -418,8 +421,8 @@ export function ChatInterface() {
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.response,
-        sources: data.sources,
+        content: data.response || data.error || 'Xin lỗi, không thể xử lý câu hỏi của bạn.',
+        sources: data.sources || [],
         timestamp: new Date()
       }
 

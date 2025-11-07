@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     const userId = searchParams.get('user_id')
     const status = searchParams.get('status')
     const minRiskScore = searchParams.get('min_risk_score')
-    const limit = parseInt(searchParams.get('limit') || '50')
+    const limit = parseInt(searchParams.get('limit') || '1000') // Tăng limit lên 1000
 
     let query = supabaseAdmin
       .from('suspicious_activities')
@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
         created_at,
         profiles:user_id (
           id,
-          full_name
+          full_name,
+          role
         ),
         reviewed_by_profile:reviewed_by (
           id,

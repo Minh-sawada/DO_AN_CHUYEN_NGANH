@@ -23,7 +23,9 @@ import {
   Eye,
   X,
   Search,
-  Filter
+  Filter,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Law, Profile } from '@/lib/supabase'
@@ -61,6 +63,9 @@ export function AdminPanel() {
   const [loadingLawDetail, setLoadingLawDetail] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterLoaiVanBan, setFilterLoaiVanBan] = useState<string>('all')
+  const [lawsPage, setLawsPage] = useState(1)
+  const [lawsPerPage, setLawsPerPage] = useState(20)
+  const [totalLaws, setTotalLaws] = useState(0)
   const { toast } = useToast()
 
   const [lawsLoading, setLawsLoading] = useState(false)
@@ -69,6 +74,11 @@ export function AdminPanel() {
   
   const isAdmin = profile?.role === 'admin'
   const isEditor = profile?.role === 'editor'
+
+  // Reset về trang 1 khi search hoặc filter thay đổi
+  useEffect(() => {
+    setLawsPage(1)
+  }, [searchTerm, filterLoaiVanBan])
 
   useEffect(() => {
     // Load song song để tăng tốc độ
@@ -108,13 +118,11 @@ export function AdminPanel() {
         return
       }
 
-      // CHỈ select các cột cần thiết, KHÔNG select noi_dung và noi_dung_html (quá lớn, gây timeout)
-      // Giảm limit để tăng tốc độ load ban đầu
-      const { data, error } = await supabase
+      // Fetch tất cả laws với count để biết tổng số
+      const { data, error, count } = await supabase
         .from('laws')
-        .select('id, _id, category, link, loai_van_ban, ngay_ban_hanh, ngay_hieu_luc, so_hieu, tinh_trang, title, tom_tat, created_at, updated_at')
+        .select('id, _id, category, link, loai_van_ban, ngay_ban_hanh, ngay_hieu_luc, so_hieu, tinh_trang, title, tom_tat, created_at, updated_at', { count: 'exact' })
         .order('created_at', { ascending: false })
-        .limit(50) // Giảm xuống 50 records ban đầu để tải nhanh hơn
 
       if (error) {
         console.error('Supabase error:', {
@@ -135,6 +143,7 @@ export function AdminPanel() {
       }))
 
       setLaws(lawsWithNullFields)
+      setTotalLaws(count || 0)
     } catch (error: any) {
       console.error('Error fetching laws:', error)
       const errorMessage = error?.message || error?.toString() || 'Không thể tải danh sách văn bản pháp luật'
@@ -363,7 +372,7 @@ export function AdminPanel() {
           </TabsTrigger>
           <TabsTrigger value="upload" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <Upload className="h-4 w-4 mr-2" />
-            Upload File
+            Văn Bản Pháp Luật
           </TabsTrigger>
           <TabsTrigger value="queries" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <MessageSquare className="h-4 w-4 mr-2" />
@@ -393,6 +402,372 @@ export function AdminPanel() {
 
       <TabsContent value="upload" className="space-y-4">
         <LawUpload />
+        
+        <div className="border-t pt-4 mt-4">
+        <Card>
+          <CardHeader className="bg-gradient-to-r from-green-50 to-green-100 border-b">
+            <CardTitle className="flex items-center space-x-2 text-green-800">
+              <FileText className="h-6 w-6" />
+              <span>Danh sách Văn bản Pháp luật</span>
+              <Badge variant="secondary" className="ml-auto">
+                {(() => {
+                  const filtered = laws.filter(law => {
+                    const matchesSearch = !searchTerm || 
+                      (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                    
+                    const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                    
+                    return matchesSearch && matchesFilter
+                  })
+                  
+                  if (searchTerm || filterLoaiVanBan !== 'all') {
+                    return `${filtered.length} / ${totalLaws} văn bản`
+                  }
+                  return `${totalLaws} văn bản`
+                })()}
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-green-600">
+              Quản lý và theo dõi các văn bản pháp luật trong hệ thống
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* Search and Filter Section */}
+            <div className="mb-4 space-y-3">
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Search Input */}
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="Tìm kiếm theo tiêu đề, số hiệu, người ký..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+                
+                {/* Filter by Loại văn bản */}
+                <div className="w-full sm:w-64">
+                  <Select value={filterLoaiVanBan} onValueChange={setFilterLoaiVanBan}>
+                    <SelectTrigger className="w-full">
+                      <Filter className="h-4 w-4 mr-2" />
+                      <SelectValue placeholder="Tất cả loại văn bản" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Tất cả loại văn bản</SelectItem>
+                      {Array.from(new Set(laws.map(l => l.loai_van_ban).filter(Boolean))).sort().map((loai) => (
+                        <SelectItem key={loai} value={loai || ''}>
+                          {loai}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                {/* Clear Filters Button */}
+                {(searchTerm || filterLoaiVanBan !== 'all') && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSearchTerm('')
+                      setFilterLoaiVanBan('all')
+                    }}
+                    className="whitespace-nowrap"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Xóa bộ lọc
+                  </Button>
+                )}
+              </div>
+              
+              {/* Results Count */}
+              {(() => {
+                const filtered = laws.filter(law => {
+                  const matchesSearch = !searchTerm || 
+                    (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                  
+                  const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                  
+                  return matchesSearch && matchesFilter
+                })
+                
+                return (
+                  <div className="text-sm text-gray-600">
+                    Hiển thị {filtered.length} / {totalLaws} văn bản
+                    {(searchTerm || filterLoaiVanBan !== 'all') && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSearchTerm('')
+                          setFilterLoaiVanBan('all')
+                        }}
+                        className="ml-2 h-auto p-0 text-blue-600 hover:text-blue-700"
+                      >
+                        Xóa bộ lọc
+                      </Button>
+                    )}
+                  </div>
+                )
+              })()}
+            </div>
+          </CardContent>
+          
+          <CardContent className="p-0 border-t">
+            <ScrollArea className="h-[500px]">
+              <div className="p-4 space-y-3">
+                {(() => {
+                  // Filter laws based on search and filter
+                  const filteredLaws = laws.filter(law => {
+                    const matchesSearch = !searchTerm || 
+                      (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                      (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                    
+                    const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                    
+                    return matchesSearch && matchesFilter
+                  })
+                  
+                  // Nếu chưa có văn bản nào
+                  if (laws.length === 0) {
+                    return (
+                  <div className="text-center py-12">
+                    <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                      <FileText className="h-8 w-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Chưa có văn bản nào</h3>
+                    <p className="text-gray-500 mb-4">Hãy upload văn bản pháp luật đầu tiên của bạn</p>
+                  </div>
+                    )
+                  }
+                  
+                  // Nếu không tìm thấy sau khi filter
+                  if (filteredLaws.length === 0) {
+                    return (
+                      <div className="text-center py-12">
+                        <div className="mx-auto w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                          <FileText className="h-8 w-8 text-gray-400" />
+                        </div>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">Không tìm thấy văn bản nào</h3>
+                        <p className="text-gray-500 mb-4">
+                          Thử thay đổi từ khóa tìm kiếm hoặc bộ lọc
+                        </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setSearchTerm('')
+                            setFilterLoaiVanBan('all')
+                          }}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Xóa bộ lọc
+                        </Button>
+                      </div>
+                    )
+                  }
+                  
+                  // Tính toán phân trang
+                  const totalPages = Math.ceil(filteredLaws.length / lawsPerPage)
+                  const startIndex = (lawsPage - 1) * lawsPerPage
+                  const endIndex = startIndex + lawsPerPage
+                  const paginatedLaws = filteredLaws.slice(startIndex, endIndex)
+                  
+                  // Hiển thị danh sách đã filter và phân trang
+                  return (
+                    <>
+                      {paginatedLaws.map((law) => (
+                    <div 
+                      key={law.id} 
+                      className="group border border-gray-200 rounded-lg p-4 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
+                      onClick={() => {
+                        setSelectedLaw(law)
+                        setIsViewDialogOpen(true)
+                        // Fetch chi tiết để lấy noi_dung và noi_dung_html
+                        fetchLawDetail(law.id)
+                      }}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <h4 className="text-sm font-medium text-gray-900 truncate">
+                              {law.title || law.so_hieu || 'Văn bản pháp luật'}
+                            </h4>
+                            {law.category && (
+                              <Badge variant="secondary" className="text-xs">
+                                {law.category}
+                              </Badge>
+                            )}
+                            {law.loai_van_ban && (
+                              <Badge variant="outline" className="text-xs">
+                                {law.loai_van_ban}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-500">
+                            <div className="flex flex-wrap items-center gap-3">
+                              {law.so_hieu && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                                  <span>Số hiệu: {law.so_hieu}</span>
+                                </span>
+                              )}
+                              {law.ngay_ban_hanh && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                                  <span>BH: {law.ngay_ban_hanh}</span>
+                                </span>
+                              )}
+                              {law.ngay_hieu_luc && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-orange-400 rounded-full"></div>
+                                  <span>HL: {law.ngay_hieu_luc}</span>
+                                </span>
+                              )}
+                              {law.tinh_trang && (
+                                <span className="flex items-center space-x-1">
+                                  <div className="w-2 h-2 bg-red-400 rounded-full"></div>
+                                  <span>{law.tinh_trang}</span>
+                                </span>
+                              )}
+                              <span className="flex items-center space-x-1">
+                                <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                                <span>{new Date(law.created_at).toLocaleDateString('vi-VN')}</span>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation() // Ngăn event bubble lên card
+                              setSelectedLaw(law)
+                              setIsViewDialogOpen(true)
+                              // Fetch chi tiết để lấy noi_dung và noi_dung_html
+                              fetchLawDetail(law.id)
+                            }}
+                            className="text-blue-600 border-blue-200 hover:bg-blue-50 hover:border-blue-300"
+                            title="Xem chi tiết"
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            <span className="text-xs">Xem</span>
+                          </Button>
+                          {isAdmin && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation() // Ngăn event bubble lên card
+                                deleteLaw(law.id)
+                              }}
+                              className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
+                              title="Xóa văn bản"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                    </>
+                  )
+                })()}
+              </div>
+            </ScrollArea>
+            
+            {/* Pagination Controls - Outside ScrollArea để luôn hiển thị */}
+            {(() => {
+              const filteredLaws = laws.filter(law => {
+                const matchesSearch = !searchTerm || 
+                  (law.title || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (law.so_hieu || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (law.nguoi_ky || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (law.noi_ban_hanh || '').toLowerCase().includes(searchTerm.toLowerCase())
+                
+                const matchesFilter = filterLoaiVanBan === 'all' || law.loai_van_ban === filterLoaiVanBan
+                
+                return matchesSearch && matchesFilter
+              })
+              
+              const totalPages = Math.ceil(filteredLaws.length / lawsPerPage)
+              
+              if (totalPages <= 1 || filteredLaws.length === 0) return null
+              
+              return (
+                <div className="p-4 border-t bg-gray-50">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      Trang {lawsPage} / {totalPages} ({filteredLaws.length} văn bản)
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLawsPage(prev => Math.max(1, prev - 1))}
+                        disabled={lawsPage === 1}
+                        className="flex items-center space-x-1"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        <span>Trước</span>
+                      </Button>
+                      
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum: number
+                          
+                          if (totalPages <= 5) {
+                            pageNum = i + 1
+                          } else if (lawsPage <= 3) {
+                            pageNum = i + 1
+                          } else if (lawsPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i
+                          } else {
+                            pageNum = lawsPage - 2 + i
+                          }
+                          
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={lawsPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setLawsPage(pageNum)}
+                              className={lawsPage === pageNum ? "bg-blue-600 text-white" : ""}
+                            >
+                              {pageNum}
+                            </Button>
+                          )
+                        })}
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setLawsPage(prev => Math.min(totalPages, prev + 1))}
+                        disabled={lawsPage === totalPages}
+                        className="flex items-center space-x-1"
+                      >
+                        <span>Sau</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()}
+          </CardContent>
+        </Card>
+        </div>
       </TabsContent>
 
       <TabsContent value="laws" className="space-y-4">
@@ -592,7 +967,7 @@ export function AdminPanel() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center space-x-3 mb-2">
                             <h4 className="text-sm font-medium text-gray-900 truncate">
-                              {law.title || 'Untitled'}
+                              {law.title || law.so_hieu || 'Văn bản pháp luật'}
                             </h4>
                             {law.category && (
                               <Badge variant="secondary" className="text-xs">
@@ -781,7 +1156,7 @@ export function AdminPanel() {
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">
-              {selectedLaw?.title || 'Chi tiết văn bản pháp luật'}
+              {selectedLaw?.title || selectedLaw?.so_hieu || 'Chi tiết văn bản pháp luật'}
             </DialogTitle>
             {selectedLaw?.so_hieu && (
               <div className="flex items-center gap-2 mt-2">

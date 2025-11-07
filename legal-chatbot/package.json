@@ -6,6 +6,7 @@
     "dev": "next dev --turbopack",
     "dev:https": "node scripts/dev-https.js",
     "generate-cert": "node scripts/generate-cert.js",
+    "setup-mkcert": "node scripts/setup-mkcert.js",
     "cert:quick": "npm run generate-cert && npm run dev:https",
     "dev:clean": "npm run clean && npm run dev",
     "clean": "powershell -Command \"Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue; Remove-Item -Recurse -Force node_modules/.cache -ErrorAction SilentlyContinue\"",
