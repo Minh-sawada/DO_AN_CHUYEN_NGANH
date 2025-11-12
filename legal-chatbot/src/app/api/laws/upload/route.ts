@@ -251,14 +251,18 @@ export async function POST(req: NextRequest) {
 
     // Log upload laws action (chỉ log nếu có user_id và user là admin/editor)
     const userId = await getUserIdFromRequest(req)
+    console.log('📝 Upload laws - User ID:', userId)
+    
     if (userId) {
       try {
         // Kiểm tra role của user
-        const { data: userProfile } = await supabaseAdmin
+        const { data: userProfile, error: profileError } = await supabaseAdmin
           .from('profiles')
           .select('role')
           .eq('id', userId)
           .single()
+        
+        console.log('📝 Upload laws - User profile:', userProfile, 'Error:', profileError)
         
         // Chỉ log nếu user là admin hoặc editor
         if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'editor')) {
@@ -267,7 +271,9 @@ export async function POST(req: NextRequest) {
                           'unknown'
           const clientUserAgent = req.headers.get('user-agent') || 'unknown'
 
-          await supabaseAdmin.rpc('log_user_activity', {
+          console.log('📝 Logging upload_laws activity for user:', userId, 'Role:', userProfile.role)
+          
+          const { data: logData, error: logError } = await supabaseAdmin.rpc('log_user_activity', {
             p_user_id: userId,
             p_activity_type: 'admin_action',
             p_action: 'upload_laws',
@@ -283,11 +289,21 @@ export async function POST(req: NextRequest) {
             p_user_agent: clientUserAgent,
             p_risk_level: 'medium' // Upload laws là hành động quan trọng
           } as any)
+          
+          if (logError) {
+            console.error('❌ Failed to log upload laws activity:', logError)
+          } else {
+            console.log('✅ Upload laws activity logged successfully:', logData)
+          }
+        } else {
+          console.log('⏭️ Skipping log - User role is not admin/editor:', userProfile?.role)
         }
       } catch (logError) {
-        console.error('Failed to log upload laws activity:', logError)
+        console.error('❌ Failed to log upload laws activity:', logError)
         // Không throw - logging không nên làm gián đoạn flow chính
       }
+    } else {
+      console.log('⏭️ Skipping log - No user ID found')
     }
 
     return NextResponse.json({

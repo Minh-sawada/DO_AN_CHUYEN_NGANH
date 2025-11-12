@@ -16,6 +16,7 @@ import {
   Upload, 
   FileText, 
   MessageSquare, 
+  MessageCircle,
   BarChart3, 
   Loader2,
   Trash2,
@@ -34,6 +35,7 @@ import { AdminDashboard } from './AdminDashboard'
 import { BackupStatus } from './BackupStatus'
 import { LawUpload } from './LawUpload'
 import { SystemManagement } from './SystemManagement'
+import { SupportChatAdmin } from './SupportChatAdmin'
 
 interface QueryLogWithProfile {
   id: string // UUID
@@ -365,7 +367,7 @@ export function AdminPanel() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-4'} bg-white shadow-sm`}>
+        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-3'} bg-white shadow-sm`}>
           <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <BarChart3 className="h-4 w-4 mr-2" />
             Dashboard
@@ -378,10 +380,6 @@ export function AdminPanel() {
             <MessageSquare className="h-4 w-4 mr-2" />
             Lịch sử truy vấn
           </TabsTrigger>
-          <TabsTrigger value="stats" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <BarChart3 className="h-4 w-4 mr-2" />
-            Thống kê
-          </TabsTrigger>
           {isAdmin && (
             <>
               <TabsTrigger value="system" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
@@ -391,6 +389,10 @@ export function AdminPanel() {
               <TabsTrigger value="backup" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
                 <Database className="h-4 w-4 mr-2" />
                 Backup
+              </TabsTrigger>
+              <TabsTrigger value="support" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
+                <MessageCircle className="h-4 w-4 mr-2" />
+                Hỗ Trợ
               </TabsTrigger>
             </>
           )}
@@ -1095,48 +1097,6 @@ export function AdminPanel() {
         </Card>
       </TabsContent>
 
-      <TabsContent value="stats" className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Tổng văn bản</CardTitle>
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalLaws}</div>
-              <p className="text-xs text-muted-foreground">
-                Văn bản pháp luật
-              </p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Tổng truy vấn</CardTitle>
-              <MessageSquare className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalQueries}</div>
-              <p className="text-xs text-muted-foreground">
-                Câu hỏi đã xử lý
-              </p>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Truy vấn gần đây</CardTitle>
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.recentQueries}</div>
-              <p className="text-xs text-muted-foreground">
-                Trong 7 ngày qua
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </TabsContent>
 
       {isAdmin && (
         <>
@@ -1146,6 +1106,9 @@ export function AdminPanel() {
 
           <TabsContent value="backup" className="space-y-4">
             <BackupStatus />
+          </TabsContent>
+          <TabsContent value="support" className="space-y-4">
+            <SupportChatAdmin />
           </TabsContent>
         </>
       )}

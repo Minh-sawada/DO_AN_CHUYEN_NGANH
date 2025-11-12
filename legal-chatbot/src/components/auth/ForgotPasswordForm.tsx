@@ -27,10 +27,12 @@ export function ForgotPasswordForm({ onBack, onSuccess }: ForgotPasswordFormProp
     try {
       // Gửi email reset password
       // Sử dụng API route để xử lý code exchange (tránh lỗi code_verifier)
-      const redirectUrl = `${window.location.origin}/api/auth/reset-password`
+      // Hoặc redirect trực tiếp đến reset-password page
+      const redirectUrl = `${window.location.origin}/reset-password`
       
       // Lưu vào sessionStorage để có thể kiểm tra trong callback
       sessionStorage.setItem('supabase.auth.redirect_url', redirectUrl)
+      sessionStorage.setItem('password_reset_initiated', 'true')
       
       console.log('Sending reset password email to:', email)
       console.log('Redirect URL:', redirectUrl)

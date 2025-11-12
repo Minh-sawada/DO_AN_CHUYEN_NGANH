@@ -448,6 +448,21 @@ export function SystemManagement() {
     return groupedArray
   }
 
+  const formatActionName = (action: string) => {
+    const actionMap: Record<string, string> = {
+      'upload_laws': '📤 Upload Văn bản Pháp luật (JSON)',
+      'upload_law_word': '📄 Upload Văn bản Pháp luật (Word/PDF)',
+      'update_user_profile': '👤 Cập nhật Thông tin Người dùng',
+      'delete_user': '🗑️ Xóa Người dùng',
+      'ban_user': '🚫 Ban Người dùng',
+      'unban_user': '✅ Gỡ Ban Người dùng',
+      'update_profile': '✏️ Cập nhật Profile',
+      'delete_chat_session': '💬 Xóa Phiên Chat'
+    }
+    
+    return actionMap[action] || action.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+  }
+
   const formatActivityDetails = (details: any) => {
     if (!details || typeof details !== 'object') {
       return null
@@ -1388,7 +1403,7 @@ export function SystemManagement() {
                               </span>
                             </div>
                               <p className="font-medium mb-2 text-gray-900">
-                                {activity.action}
+                                {formatActionName(activity.action)}
                               </p>
                               <div className="text-sm text-gray-600 space-y-1.5">
                                 <div className="flex items-center space-x-2">
