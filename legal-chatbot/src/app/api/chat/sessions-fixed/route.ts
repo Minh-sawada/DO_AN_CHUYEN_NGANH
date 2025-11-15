@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
 export async function GET(request: NextRequest) {
@@ -90,52 +91,91 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const cookieStore = await cookies()
-    
-    const supabase = createServerClient(
+    // Sử dụng service role key để bypass RLS, nhưng vẫn validate userId từ auth
+    const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options })
-          },
-          remove(name: string, options: any) {
-            cookieStore.set({ name, value: '', ...options })
-          },
-        },
-      }
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
 
-    const { data: { session }, error } = await supabase.auth.getSession()
-    
-    if (error) {
-      console.error('Supabase auth error:', error)
+    // Parse request body trước
+    let body
+    try {
+      body = await request.json()
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError)
       return NextResponse.json({ 
         success: false, 
-        error: 'Auth error',
-        details: error.message
-      })
+        error: 'Invalid request body',
+        details: 'Request body must be valid JSON'
+      }, { status: 400 })
     }
 
-    if (!session) {
+    const { title, userId: clientUserId } = body || {}
+
+    // Lấy userId từ auth token hoặc từ client
+    let validatedUserId: string | null = null
+
+    // Thử lấy từ cookies trước
+    try {
+      const cookieStore = await cookies()
+      const authSupabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() {
+              return cookieStore.getAll()
+            },
+            setAll(cookiesToSet) {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                cookieStore.set(name, value, options)
+              })
+            },
+          },
+        }
+      )
+
+      const { data: { user }, error: authError } = await authSupabase.auth.getUser()
+      
+      if (!authError && user) {
+        validatedUserId = user.id
+        // Validate rằng clientUserId (nếu có) khớp với userId từ session
+        if (clientUserId && clientUserId !== validatedUserId) {
+          console.warn('Client userId does not match session userId')
+        }
+      }
+    } catch (cookieError) {
+      console.error('Error getting user from cookies:', cookieError)
+    }
+
+    // Nếu không lấy được từ cookies, thử dùng clientUserId (nếu có)
+    if (!validatedUserId && clientUserId) {
+      // Validate clientUserId bằng cách check với database
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', clientUserId)
+        .single()
+      
+      if (profile) {
+        validatedUserId = clientUserId
+      }
+    }
+
+    if (!validatedUserId) {
+      console.error('No valid userId found')
       return NextResponse.json({ 
         success: false, 
-        error: 'No session found',
-        debug: 'User not authenticated'
-      })
+        error: 'Unauthorized',
+        details: 'Please login first'
+      }, { status: 401 })
     }
-
-    const { title } = await request.json()
 
     // Tạo session với title rõ ràng để tránh trigger lỗi
     const { data: newSession, error: insertError } = await supabase
       .from('chat_sessions')
       .insert({
-        user_id: session.user.id,
+        user_id: validatedUserId,
         title: title || 'Cuộc trò chuyện mới'
       })
       .select()
@@ -143,11 +183,26 @@ export async function POST(request: NextRequest) {
 
     if (insertError) {
       console.error('Error creating chat session:', insertError)
+      console.error('Insert error details:', {
+        code: insertError.code,
+        message: insertError.message,
+        details: insertError.details,
+        hint: insertError.hint
+      })
       return NextResponse.json({ 
         success: false, 
         error: 'Database error',
-        details: insertError.message
-      })
+        details: insertError.message,
+        code: insertError.code
+      }, { status: 500 })
+    }
+
+    if (!newSession) {
+      console.error('Session created but no data returned')
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Session created but no data returned'
+      }, { status: 500 })
     }
 
     return NextResponse.json({
@@ -158,7 +213,8 @@ export async function POST(request: NextRequest) {
     console.error('Create session API error:', error)
     return NextResponse.json({ 
       success: false, 
-      error: (error as Error).message || 'Internal server error'
-    })
+      error: (error as Error).message || 'Internal server error',
+      details: error instanceof Error ? error.stack : undefined
+    }, { status: 500 })
   }
 }

@@ -1,10 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
   try {
@@ -93,10 +88,35 @@ export async function DELETE(req: NextRequest) {
     const userId = searchParams.get('user_id')
     const unbannedBy = searchParams.get('unbanned_by')
 
+    console.log('🔓 Unban request:', { userId, unbannedBy })
+
     if (!userId) {
       return NextResponse.json(
         { success: false, error: 'Missing user_id parameter' },
         { status: 400 }
+      )
+    }
+
+    // Kiểm tra xem user có bị ban không trước khi unban
+    const { data: banCheck, error: checkError } = await supabaseAdmin
+      .from('banned_users')
+      .select('id, user_id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (checkError) {
+      console.error('Error checking ban status:', checkError)
+      return NextResponse.json(
+        { success: false, error: 'Failed to check ban status: ' + checkError.message },
+        { status: 500 }
+      )
+    }
+
+    if (!banCheck) {
+      console.log('⚠️ User is not banned:', userId)
+      return NextResponse.json(
+        { success: false, error: 'User is not currently banned' },
+        { status: 404 }
       )
     }
 
@@ -105,12 +125,41 @@ export async function DELETE(req: NextRequest) {
       p_user_id: userId
     })
 
+    console.log('🔓 Unban RPC result:', { data, error })
+
     if (error) {
       console.error('Error unbanning user:', error)
       return NextResponse.json(
         { success: false, error: 'Failed to unban user: ' + error.message },
         { status: 500 }
       )
+    }
+
+    // Kiểm tra xem có thực sự unban được không (data là boolean từ FOUND)
+    // FOUND trả về true nếu có row bị xóa, false nếu không có row nào
+    if (data === false || data === null) {
+      console.warn('⚠️ Unban returned false/null, but user was found in banned_users')
+      // Vẫn tiếp tục vì đã kiểm tra ở trên
+    }
+
+    // Xác nhận lại xem user đã được unban chưa
+    const { data: verifyCheck, error: verifyError } = await supabaseAdmin
+      .from('banned_users')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle()
+
+    if (verifyError) {
+      console.error('Error verifying unban:', verifyError)
+      // Không fail vì có thể đã unban thành công
+    } else if (verifyCheck) {
+      console.error('❌ User still in banned_users after unban!')
+      return NextResponse.json(
+        { success: false, error: 'Failed to unban user - user still in banned list' },
+        { status: 500 }
+      )
+    } else {
+      console.log('✅ User successfully unbanned:', userId)
     }
 
     // Log unban action (chỉ log nếu unbannedBy là admin hoặc editor)

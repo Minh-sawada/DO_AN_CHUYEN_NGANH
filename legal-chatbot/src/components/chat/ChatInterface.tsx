@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Send, Loader2, FileText, ExternalLink, Brain, Info, X, Paperclip, Search, BookOpen, Mic } from 'lucide-react'
+import { Send, Loader2, FileText, ExternalLink, Brain, Info, X, Paperclip, Search, BookOpen, Mic, Lock } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/components/auth/AuthProvider'
+import { supabase } from '@/lib/supabase'
+import Link from 'next/link'
 
 // Type definitions for Speech Recognition API
 declare global {
@@ -62,23 +64,49 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   sources?: Array<{
-    id: number
+    id: number | string
     title: string | null
     so_hieu: string | null
     loai_van_ban: string | null
     category: string | null
+    link?: string | null
+    source?: string | null
   }>
   timestamp: Date
 }
 
-export function ChatInterface() {
-  const { user } = useAuth()
+interface ChatInterfaceProps {
+  sessionId?: string | null
+  onSessionCreated?: (sessionId: string) => void
+}
+
+export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProps = {}) {
+  const { user, loading: authLoading } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [showLoginHint, setShowLoginHint] = useState(!user) // Hiển thị hint nếu chưa đăng nhập
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(sessionId || null)
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
+
+  // Debug: Log user state với chi tiết hơn
+  useEffect(() => {
+    console.log('ChatInterface - User state:', { 
+      user: user ? { 
+        id: user.id, 
+        email: user.email,
+        role: user.role || 'N/A'
+      } : null, 
+      authLoading,
+      hasUser: !!user,
+      userType: typeof user
+    })
+    
+    // Nếu user null nhưng không loading, có thể có vấn đề
+    if (!user && !authLoading) {
+      console.warn('⚠️ User is null but auth is not loading - possible auth sync issue')
+    }
+  }, [user, authLoading])
   
   // Voice recognition states
   const [isListening, setIsListening] = useState(false)
@@ -87,6 +115,271 @@ export function ChatInterface() {
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastTranscriptTimeRef = useRef<number>(0)
 
+  // Load messages từ session khi sessionId thay đổi
+  useEffect(() => {
+    const sessionIdToLoad = sessionId || null
+    
+    console.log('🔄 SessionId changed:', {
+      oldSessionId: currentSessionId,
+      newSessionId: sessionIdToLoad,
+      user: user?.id
+    })
+    
+    // Nếu sessionId thay đổi, load messages mới
+    if (sessionIdToLoad !== currentSessionId) {
+      setCurrentSessionId(sessionIdToLoad)
+      
+      // Nếu sessionId = null (new chat), clear messages ngay lập tức
+      if (!sessionIdToLoad) {
+        console.log('📭 Clearing messages (new chat)')
+        setMessages([])
+        return
+      }
+      
+      // Load messages từ session - gọi trực tiếp trong useEffect
+      const loadMessages = async () => {
+        const currentUser = user
+        if (!sessionIdToLoad || !currentUser) {
+          console.warn('⚠️ Cannot load messages:', { sessionIdToLoad, hasUser: !!currentUser })
+          setMessages([])
+          return
+        }
+
+        try {
+          console.log('📡 Fetching messages for session:', sessionIdToLoad)
+          // Gửi userId trong query params để fallback nếu cookies không được gửi
+          const response = await fetch(`/api/chat/sessions-fixed/${sessionIdToLoad}?userId=${currentUser.id}`, {
+            credentials: 'include'
+          })
+          
+          console.log('📡 Response status:', response.status)
+          
+          if (response.ok) {
+            const data = await response.json()
+            console.log('📦 Response data:', {
+              success: data.success,
+              hasSession: !!data.session,
+              messagesCount: data.session?.chat_messages?.length || 0
+            })
+            
+            if (data.success && data.session?.chat_messages) {
+              // Sắp xếp messages theo created_at
+              const sortedMessages = data.session.chat_messages.sort((a: any, b: any) => {
+                return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+              })
+              
+              const loadedMessages: Message[] = sortedMessages.map((msg: any) => ({
+                id: msg.id,
+                role: msg.role,
+                content: msg.content,
+                sources: msg.sources || [],
+                timestamp: new Date(msg.created_at)
+              }))
+              
+              console.log('✅ Loaded messages:', loadedMessages.length)
+              setMessages(loadedMessages)
+            } else {
+              console.warn('⚠️ No messages in response:', data)
+              setMessages([])
+            }
+          } else {
+            const errorData = await response.json().catch(() => ({}))
+            console.error('❌ Failed to load messages:', response.status, errorData)
+            setMessages([])
+          }
+        } catch (error) {
+          console.error('❌ Error loading messages from session:', error)
+          setMessages([])
+        }
+      }
+      
+      console.log('📥 Loading messages for session:', sessionIdToLoad)
+      loadMessages()
+    }
+  }, [sessionId, user, currentSessionId])
+
+  // Load messages từ session
+  const loadMessagesFromSession = async (sessionIdToLoad: string | null) => {
+    const currentUser = user
+    if (!sessionIdToLoad || !currentUser) {
+      console.warn('⚠️ Cannot load messages:', { sessionIdToLoad, hasUser: !!currentUser })
+      setMessages([])
+      return
+    }
+
+    try {
+      console.log('📡 Fetching messages for session:', sessionIdToLoad)
+      const response = await fetch(`/api/chat/sessions-fixed/${sessionIdToLoad}`, {
+        credentials: 'include'
+      })
+      
+      console.log('📡 Response status:', response.status)
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('📦 Response data:', {
+          success: data.success,
+          hasSession: !!data.session,
+          messagesCount: data.session?.chat_messages?.length || 0
+        })
+        
+        if (data.success && data.session?.chat_messages) {
+          // Sắp xếp messages theo created_at
+          const sortedMessages = data.session.chat_messages.sort((a: any, b: any) => {
+            return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          })
+          
+          const loadedMessages: Message[] = sortedMessages.map((msg: any) => ({
+            id: msg.id,
+            role: msg.role,
+            content: msg.content,
+            sources: msg.sources || [],
+            timestamp: new Date(msg.created_at)
+          }))
+          
+          console.log('✅ Loaded messages:', loadedMessages.length)
+          setMessages(loadedMessages)
+        } else {
+          console.warn('⚠️ No messages in response:', data)
+          setMessages([])
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('❌ Failed to load messages:', response.status, errorData)
+        setMessages([])
+      }
+    } catch (error) {
+      console.error('❌ Error loading messages from session:', error)
+      setMessages([])
+    }
+  }
+
+  // Tạo session mới
+  const createNewSession = async (title: string): Promise<string | null> => {
+    // Lấy user từ useAuth lại để đảm bảo có user mới nhất
+    const currentUser = user
+    if (!currentUser) {
+      console.error('Cannot create session: user not logged in', { 
+        user, 
+        authLoading,
+        timestamp: new Date().toISOString()
+      })
+      return null
+    }
+
+    try {
+      const response = await fetch('/api/chat/sessions-fixed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Đảm bảo gửi cookies
+        body: JSON.stringify({ 
+          title: title || 'Cuộc trò chuyện mới',
+          userId: currentUser.id // Gửi userId từ client
+        }),
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success && data.session) {
+        const newSessionId = data.session.id
+        setCurrentSessionId(newSessionId)
+        onSessionCreated?.(newSessionId)
+        return newSessionId
+      } else {
+        // Log chi tiết lỗi
+        console.error('Failed to create session:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: data.error,
+          details: data.details,
+          debug: data.debug
+        })
+        
+        // Hiển thị error message chi tiết hơn
+        toast({
+          title: 'Lỗi tạo cuộc trò chuyện',
+          description: data.details || data.error || 'Không thể tạo cuộc trò chuyện mới. Vui lòng thử lại.',
+          variant: 'destructive',
+        })
+        }
+      } catch (error) {
+      console.error('Error creating session:', error)
+      toast({
+        title: 'Lỗi',
+        description: 'Có lỗi xảy ra khi tạo cuộc trò chuyện. Vui lòng thử lại.',
+        variant: 'destructive',
+      })
+    }
+    return null
+  }
+
+  // Update title của session từ tin nhắn đầu tiên
+  const updateSessionTitle = async (sessionId: string, title: string) => {
+    try {
+      await fetch(`/api/chat/sessions-fixed/${sessionId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ title }),
+      })
+      } catch (error) {
+      console.error('Error updating session title:', error)
+    }
+  }
+
+  // Lưu message vào session
+  const saveMessageToSession = async (message: Message, sessionIdToSave: string | null, isFirstMessage: boolean = false) => {
+    const currentUser = user
+    if (!sessionIdToSave || !currentUser) {
+      console.warn('Cannot save message: missing sessionId or user', { sessionIdToSave, user: currentUser })
+      return
+    }
+
+    try {
+      console.log('💾 Saving message to session:', { sessionId: sessionIdToSave, role: message.role })
+      const response = await fetch('/api/chat/messages-simple', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          sessionId: sessionIdToSave,
+          role: message.role,
+          content: message.content,
+          sources: message.sources || null,
+          userId: currentUser.id, // Gửi userId để fallback nếu cookies không có
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('❌ Failed to save message:', response.status, errorData)
+        return
+      }
+
+      const data = await response.json()
+      if (data.success) {
+        console.log('✅ Message saved successfully:', data.message?.id)
+      }
+      
+      // Nếu là tin nhắn đầu tiên (user message) và title chưa được set đúng, update title
+      if (isFirstMessage && message.role === 'user') {
+        // Tạo title từ nội dung tin nhắn (tối đa 50 ký tự)
+        const newTitle = message.content.trim().substring(0, 50)
+        if (newTitle) {
+          await updateSessionTitle(sessionIdToSave, newTitle)
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error saving message to session:', error)
+    }
+  }
+
   useEffect(() => {
     // Scroll to bottom when new messages are added
     if (scrollAreaRef.current) {
@@ -94,14 +387,13 @@ export function ChatInterface() {
     }
   }, [messages])
 
+
+  // Xử lý khi user thay đổi (đăng nhập/đăng xuất)
+  // Giữ messages hiện tại khi user đăng nhập (không clear)
   useEffect(() => {
-    // Ẩn hint khi user đăng nhập
-    if (user) {
-      setShowLoginHint(false)
-    } else {
-      setShowLoginHint(true)
-    }
-  }, [user])
+    // Khi user đăng nhập, messages sẽ được khôi phục từ localStorage với key mới
+    // Không cần làm gì thêm vì useEffect khôi phục messages đã xử lý
+  }, [user?.id])
 
   // Initialize Speech Recognition
   useEffect(() => {
@@ -371,6 +663,55 @@ export function ChatInterface() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
+    // Kiểm tra đăng nhập trước khi chat
+    if (authLoading) {
+      // Đang load auth, đợi một chút
+      toast({
+        title: 'Đang tải...',
+        description: 'Vui lòng đợi hệ thống xác thực.',
+        duration: 2000,
+      })
+      return
+    }
+
+    // Lấy user mới nhất - thử nhiều cách
+    let currentUser = user
+    
+    // Nếu user null, thử lấy từ supabase trực tiếp
+    if (!currentUser) {
+      console.warn('User is null in handleSubmit, trying to get from supabase directly...')
+      try {
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        if (session?.user && !sessionError) {
+          console.log('✅ Found user from direct session check:', session.user.id)
+          currentUser = session.user
+        } else {
+          console.error('❌ No session found:', sessionError?.message || 'No session')
+        }
+      } catch (error) {
+        console.error('Error checking session:', error)
+      }
+    }
+    
+    // Nếu vẫn không có user, báo lỗi
+    if (!currentUser) {
+      console.error('User not found in handleSubmit after all checks:', { 
+        userFromContext: user, 
+        authLoading,
+        timestamp: new Date().toISOString()
+      })
+      
+      toast({
+        title: 'Yêu cầu đăng nhập',
+        description: 'Vui lòng đăng nhập để sử dụng tính năng chat. Nếu đã đăng nhập, vui lòng refresh trang (F5).',
+        variant: 'destructive',
+        duration: 5000,
+      })
+      return
+    }
+    
+    console.log('✅ User confirmed in handleSubmit:', currentUser.id)
+    
     // Nếu đang nghe, dừng lại và thêm transcript vào input
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop()
@@ -384,8 +725,20 @@ export function ChatInterface() {
     const finalInput = input.trim() + (transcript ? ' ' + transcript.trim() : '')
     if (!finalInput || isLoading) return
 
+    // Tạo session mới nếu chưa có
+    let sessionIdToUse = currentSessionId
+    if (!sessionIdToUse) {
+      sessionIdToUse = await createNewSession(finalInput.substring(0, 50))
+      if (!sessionIdToUse) {
+        // Error đã được hiển thị trong createNewSession
+        setIsLoading(false)
+        return
+      }
+    }
+
+    // Tạo ID unique bằng cách kết hợp timestamp và random
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       role: 'user',
       content: finalInput,
       timestamp: new Date()
@@ -396,30 +749,51 @@ export function ChatInterface() {
     setTranscript('')
     setIsLoading(true)
 
+    // Lưu user message vào session (dùng currentUser đã check ở trên)
+    // isFirstMessage = true nếu đây là tin nhắn đầu tiên trong session
+    const isFirstMessage = messages.length === 0
+    await saveMessageToSession(userMessage, sessionIdToUse, isFirstMessage)
+
     try {
-      // Lấy user_id từ auth để log activity
-      const userId = user?.id || null
-      
-      // Gửi đến API route để có logging
+      // Gửi đến API route để có logging, kèm theo messages history để có context
       const response = await fetch('/api/chat-enhanced', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // QUAN TRỌNG: Gửi cookies để authentication
         body: JSON.stringify({
           query: userMessage.content,
-          userId: userId // Gửi userId để log activity
+          userId: currentUser.id, // Gửi userId từ client để fallback nếu cookies không được gửi
+          messages: messages.map(msg => ({
+            role: msg.role,
+            content: msg.content
+          })) // Gửi lịch sử tin nhắn để có context
         }),
       })
 
       if (!response.ok) {
+        // Xử lý lỗi 401 (Unauthorized)
+        if (response.status === 401) {
+          const errorData = await response.json().catch(() => ({}))
+          toast({
+            title: 'Yêu cầu đăng nhập',
+            description: errorData.response || 'Vui lòng đăng nhập để sử dụng tính năng chat.',
+            variant: 'destructive',
+            duration: 5000,
+          })
+          // Xóa message đã thêm
+          setMessages(prev => prev.filter(msg => msg.id !== userMessage.id))
+          return
+        }
         throw new Error('Lỗi khi gửi tin nhắn')
       }
 
       const data = await response.json()
       
+      // Tạo ID unique cho assistant message
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         role: 'assistant',
         content: data.response || data.error || 'Xin lỗi, không thể xử lý câu hỏi của bạn.',
         sources: data.sources || [],
@@ -427,6 +801,9 @@ export function ChatInterface() {
       }
 
       setMessages(prev => [...prev, assistantMessage])
+      
+      // Lưu assistant message vào session
+      await saveMessageToSession(assistantMessage, sessionIdToUse)
     } catch (error) {
       console.error('Chat error:', error)
       toast({
@@ -435,8 +812,9 @@ export function ChatInterface() {
         variant: 'destructive',
       })
       
+      // Tạo ID unique cho error message
       const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         role: 'assistant',
         content: 'Xin lỗi, có lỗi xảy ra. Vui lòng thử lại.',
         timestamp: new Date()
@@ -464,25 +842,28 @@ export function ChatInterface() {
         style={{ minHeight: 0, flex: '1 1 auto' }}
       >
         <div className="w-full px-4 sm:px-6 lg:px-8 py-4 pb-32 space-y-6">
-          {/* Login Hint - chỉ hiển thị khi chưa đăng nhập */}
-          {!user && showLoginHint && messages.length === 0 && (
+          {/* Login Required Message - chỉ hiển thị khi chưa đăng nhập */}
+          {!user && messages.length === 0 && (
             <div className="max-w-3xl mx-auto">
-              <div className="bg-blue-50/80 border border-blue-200/50 rounded-lg p-3 mb-4 relative">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowLoginHint(false)}
-                  className="absolute top-2 right-2 h-5 w-5 p-0 text-gray-400 hover:text-gray-600"
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-                <div className="flex items-start space-x-2 pr-6">
-                  <Info className="h-4 w-4 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6 mb-4">
+                <div className="flex items-start space-x-4">
+                  <div className="flex-shrink-0">
+                    <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                      <Lock className="h-6 w-6 text-white" />
+                    </div>
+                  </div>
                   <div className="flex-1">
-                    <p className="text-xs text-blue-800 leading-relaxed">
-                      Bạn có thể chat ngay mà không cần đăng nhập. 
-                      <span className="font-medium"> Đăng nhập để lưu lịch sử chat.</span>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      Yêu cầu đăng nhập
+                    </h3>
+                    <p className="text-sm text-gray-700 mb-4 leading-relaxed">
+                      Để sử dụng tính năng chat, vui lòng đăng nhập vào tài khoản của bạn.
                     </p>
+                    <Link href="/login">
+                      <Button className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white">
+                        Đăng nhập ngay
+                      </Button>
+                    </Link>
                   </div>
                 </div>
               </div>
@@ -529,20 +910,31 @@ export function ChatInterface() {
                               </p>
                             </div>
                             <div className="space-y-2">
-                              {message.sources.map((source) => (
-                                <div key={source.id} className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100">
+                              {message.sources.map((source, index) => (
+                                <div key={`${message.id}-source-${source.id || index}`} className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-3 border border-blue-100 hover:border-blue-300 transition-colors">
                                   <p className="font-medium text-blue-900 text-sm mb-1">
                                     {source.title || 'Văn bản pháp luật'}
                                   </p>
                                   {source.so_hieu && (
-                                    <p className="text-xs text-blue-700">
+                                    <p className="text-xs text-blue-700 mb-1">
                                       Số hiệu: {source.so_hieu}
                                     </p>
                                   )}
                                   {source.loai_van_ban && (
-                                    <p className="text-xs text-blue-600 mt-1">
+                                    <p className="text-xs text-blue-600 mb-2">
                                       {source.loai_van_ban}
                                     </p>
+                                  )}
+                                  {(source.link || source.source) && (
+                                    <a
+                                      href={source.link || source.source || '#'}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium mt-2 transition-colors"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                      Xem văn bản đầy đủ
+                                    </a>
                                   )}
                                 </div>
                               ))}
@@ -592,9 +984,9 @@ export function ChatInterface() {
               <Textarea
                 value={input + (transcript ? ' ' + transcript : '')}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={isListening ? "Đang nghe..." : "Nhập câu hỏi về pháp luật..."}
+                placeholder={!user ? "Vui lòng đăng nhập để chat..." : isListening ? "Đang nghe..." : "Nhập câu hỏi về pháp luật..."}
                 className="w-full min-h-[52px] max-h-[200px] resize-none border border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 rounded-2xl pr-12 py-3 px-4 text-sm transition-all bg-white"
-                disabled={isLoading}
+                disabled={isLoading || !user}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault()
@@ -611,7 +1003,7 @@ export function ChatInterface() {
             </div>
             <Button
               type="submit"
-              disabled={!input.trim() || isLoading}
+              disabled={!input.trim() || isLoading || !user}
               size="icon"
               className="h-[52px] w-[52px] bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-full shadow-sm hover:shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all flex-shrink-0"
             >

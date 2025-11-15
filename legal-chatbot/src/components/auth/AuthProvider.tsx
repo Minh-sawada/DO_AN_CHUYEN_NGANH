@@ -189,11 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(session?.user ?? null)
         
         if (session?.user) {
-          // Chỉ fetch profile nếu chưa fetch hoặc user_id khác
-          if (fetchingProfileRef.current !== session.user.id) {
-            fetchingProfileRef.current = session.user.id
-            await fetchProfile(session.user.id)
-          }
+          await fetchProfile(session.user.id)
         } else {
           setProfile(null)
           fetchingProfileRef.current = null
@@ -304,16 +300,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (response.ok && result.success) {
           console.log('✅ Logout activity logged successfully:', result.activity_id)
         } else {
-          // Không log error nếu là rate limit để tránh spam console
-          if (response.status !== 429) {
+          // Không log error nếu là rate limit hoặc user bị ban để tránh spam console
+          const errorMsg = result.error || ''
+          if (response.status !== 429 && !errorMsg.includes('banned') && !errorMsg.includes('User is banned')) {
             console.error('❌ Failed to log logout activity:', result.error)
-          } else {
+          } else if (response.status === 429) {
             console.warn('⚠️ Rate limit - skipping logout log')
           }
+          // Không log gì nếu user bị ban (expected behavior)
         }
       } catch (error: any) {
-        // Không log error nếu là rate limit để tránh spam console
-        if (!error.message?.includes('Rate limit')) {
+        // Không log error nếu là rate limit hoặc user bị ban để tránh spam console
+        const errorMsg = error.message || error.toString() || ''
+        if (!errorMsg.includes('Rate limit') && !errorMsg.includes('banned') && !errorMsg.includes('User is banned')) {
           console.error('❌ Failed to log logout activity:', error)
         }
         // Không throw - logging không nên làm gián đoạn flow chính

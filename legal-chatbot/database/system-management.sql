@@ -132,6 +132,7 @@ DECLARE
     login_count INTEGER;
     risk_score INTEGER := 0;
     pattern_detected VARCHAR(100);
+    target_role TEXT;
 BEGIN
     -- Kiểm tra nếu là query activity
     IF NEW.activity_type = 'query' THEN
@@ -154,6 +155,9 @@ BEGIN
     
     -- Kiểm tra login attempts
     IF NEW.activity_type = 'login' THEN
+        -- Lấy role của user
+        SELECT role INTO target_role FROM profiles WHERE id = NEW.user_id;
+
         SELECT COUNT(*) INTO login_count
         FROM user_activities
         WHERE user_id = NEW.user_id
@@ -188,6 +192,22 @@ BEGIN
                 'details', NEW.details
             )
         );
+
+        -- Nếu phát hiện brute force login thì tự động ban tạm thời
+        -- KHÔNG tự động ban nếu user là admin
+        IF pattern_detected = 'brute_force_login' 
+           AND NEW.user_id IS NOT NULL 
+           AND COALESCE(target_role, 'user') <> 'admin' THEN
+            -- Auto ban 1 giờ
+            PERFORM ban_user(
+                NEW.user_id,
+                'Tự động khóa tạm thời do đăng nhập thất bại quá nhiều lần',
+                NULL,
+                'temporary',
+                1,
+                'Auto ban triggered at ' || NOW()
+            );
+        END IF;
     END IF;
     
     RETURN NEW;
@@ -206,7 +226,14 @@ CREATE OR REPLACE FUNCTION is_user_banned(check_user_id UUID)
 RETURNS BOOLEAN AS $$
 DECLARE
     ban_record RECORD;
+    target_role TEXT;
 BEGIN
+    -- Admins are never considered banned
+    SELECT role INTO target_role FROM profiles WHERE id = check_user_id;
+    IF COALESCE(target_role, 'user') = 'admin' THEN
+        RETURN FALSE;
+    END IF;
+
     SELECT * INTO ban_record
     FROM banned_users
     WHERE user_id = check_user_id
@@ -271,7 +298,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE FUNCTION ban_user(
     p_user_id UUID,
     p_reason TEXT,
-    p_banned_by UUID,
+    p_banned_by UUID DEFAULT NULL,
     p_ban_type VARCHAR DEFAULT 'temporary',
     p_duration_hours INTEGER DEFAULT 24,
     p_notes TEXT DEFAULT NULL
@@ -280,7 +307,15 @@ RETURNS UUID AS $$
 DECLARE
     ban_id UUID;
     banned_until TIMESTAMP WITH TIME ZONE;
+    target_role TEXT;
 BEGIN
+    -- KHÔNG cho phép ban admin (kể cả manual hay auto)
+    SELECT role INTO target_role FROM profiles WHERE id = p_user_id;
+    IF COALESCE(target_role, 'user') = 'admin' THEN
+        -- Trả về NULL để biểu thị không thực hiện ban
+        RETURN NULL;
+    END IF;
+
     IF p_ban_type = 'temporary' THEN
         banned_until := NOW() + (p_duration_hours || ' hours')::INTERVAL;
     ELSE
@@ -324,6 +359,170 @@ BEGIN
     WHERE user_id = p_user_id;
     
     RETURN FOUND;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Helper: Lấy thông tin user từ email
+CREATE OR REPLACE FUNCTION get_user_by_email(p_email TEXT)
+RETURNS TABLE(user_id UUID, email TEXT, role TEXT) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        u.id AS user_id, 
+        u.email::text AS email,
+        COALESCE(p.role, 'user')::text AS role
+    FROM auth.users u
+    LEFT JOIN profiles p ON p.id = u.id
+    WHERE LOWER(u.email) = LOWER(p_email)
+    ORDER BY u.created_at DESC
+    LIMIT 1;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Helper: Kiểm tra trạng thái ban của user theo email
+CREATE OR REPLACE FUNCTION check_user_ban_status(p_email TEXT)
+RETURNS TABLE (
+    user_id UUID,
+    email TEXT,
+    role TEXT,
+    is_banned BOOLEAN,
+    ban_type VARCHAR,
+    reason TEXT,
+    banned_until TIMESTAMP WITH TIME ZONE
+) AS $$
+DECLARE
+BEGIN
+    RETURN QUERY
+    WITH user_data AS (
+        SELECT 
+            gu.user_id,
+            gu.email,
+            gu.role
+        FROM get_user_by_email(p_email) gu
+    ),
+    ban_data AS (
+        SELECT DISTINCT ON (b.user_id)
+            b.user_id,
+            TRUE AS is_banned,
+            b.ban_type,
+            b.reason,
+            b.banned_until
+        FROM banned_users b
+        WHERE
+            b.ban_type = 'permanent'
+            OR (b.ban_type = 'temporary' AND b.banned_until > NOW())
+        ORDER BY b.user_id, b.created_at DESC
+    )
+    SELECT 
+        ud.user_id,
+        ud.email,
+        ud.role,
+        COALESCE(bd.is_banned, FALSE) AS is_banned,
+        bd.ban_type,
+        bd.reason::text,
+        bd.banned_until
+    FROM user_data ud
+    LEFT JOIN ban_data bd ON bd.user_id = ud.user_id;
+
+    IF NOT FOUND THEN
+        RETURN QUERY
+        SELECT 
+            NULL::uuid,
+            NULL::text,
+            NULL::text,
+            FALSE,
+            NULL::varchar,
+            NULL::text,
+            NULL::timestamptz;
+    END IF;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Helper: Log login attempt với email (bao gồm trường hợp thất bại)
+CREATE OR REPLACE FUNCTION log_login_attempt(
+    p_email TEXT,
+    p_success BOOLEAN,
+    p_ip_address TEXT DEFAULT NULL,
+    p_user_agent TEXT DEFAULT NULL,
+    p_error_message TEXT DEFAULT NULL
+)
+RETURNS JSON AS $$
+DECLARE
+    user_record RECORD;
+    activity_id UUID;
+    result JSON;
+    ban_info RECORD;
+BEGIN
+    SELECT * INTO user_record
+    FROM get_user_by_email(p_email);
+
+    IF NOT FOUND THEN
+        RETURN json_build_object(
+            'user_exists', FALSE,
+            'logged', FALSE,
+            'message', 'User not found'
+        );
+    END IF;
+
+    BEGIN
+        activity_id := log_user_activity(
+            user_record.user_id,
+            'login',
+            CASE WHEN p_success THEN 'user_login_success' ELSE 'user_login_failed' END,
+            jsonb_build_object(
+                'email', user_record.email,
+                'success', p_success,
+                'error', p_error_message
+            ),
+            p_ip_address,
+            p_user_agent,
+            CASE WHEN p_success THEN 'low' ELSE 'medium' END
+        );
+
+        result := json_build_object(
+            'user_exists', TRUE,
+            'logged', TRUE,
+            'activity_id', activity_id,
+            'user_id', user_record.user_id
+        );
+
+        SELECT * INTO ban_info
+        FROM check_user_ban_status(user_record.email);
+
+        IF FOUND THEN
+            result := result || json_build_object(
+                'ban_status', json_build_object(
+                    'is_banned', ban_info.is_banned,
+                    'ban_type', ban_info.ban_type,
+                    'reason', ban_info.reason,
+                    'banned_until', ban_info.banned_until
+                )
+            );
+        END IF;
+    EXCEPTION WHEN others THEN
+        result := json_build_object(
+            'user_exists', TRUE,
+            'logged', FALSE,
+            'error', SQLERRM,
+            'user_id', user_record.user_id
+        );
+
+        SELECT * INTO ban_info
+        FROM check_user_ban_status(user_record.email);
+
+        IF FOUND THEN
+            result := result || json_build_object(
+                'ban_status', json_build_object(
+                    'is_banned', ban_info.is_banned,
+                    'ban_type', ban_info.ban_type,
+                    'reason', ban_info.reason,
+                    'banned_until', ban_info.banned_until
+                )
+            );
+        END IF;
+    END;
+
+    RETURN result;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

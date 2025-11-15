@@ -40,6 +40,42 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
     setLoading(true)
 
     try {
+      // 1. Check ban status trước khi đăng nhập
+      let banData: any = null
+      try {
+        const banResponse = await fetch('/api/auth/check-ban', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email })
+        })
+
+        banData = await banResponse.json()
+
+        if (!banResponse.ok) {
+          console.warn('Skip ban check due to error:', banData.error)
+          banData = null
+        }
+      } catch (error) {
+        console.error('Ban check failed, continue login:', error)
+        banData = null
+      }
+
+      if (banData?.isBanned && banData?.role !== 'admin') {
+        const bannedUntil = banData.banInfo?.bannedUntil
+          ? new Date(banData.banInfo.bannedUntil).toLocaleString('vi-VN')
+          : null
+
+        toast({
+          title: 'Tài khoản đang bị khóa',
+          description: banData.banInfo?.reason
+            ? `${banData.banInfo.reason}${bannedUntil ? ` (mở khóa sau: ${bannedUntil})` : ''}`
+            : 'Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên để được hỗ trợ.',
+          variant: 'destructive'
+        })
+        setLoading(false)
+        return
+      }
+
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({
           email,
@@ -47,6 +83,43 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
         })
 
         if (error) {
+          try {
+            const logResponse = await fetch('/api/auth/log-login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email,
+                success: false,
+                errorMessage: error.message
+              })
+            })
+
+            const logData = await logResponse.json()
+
+            if (logResponse.ok) {
+              const banStatus = logData.result?.ban_status
+              if (banStatus?.is_banned) {
+                const bannedUntil = banStatus?.banned_until
+                  ? new Date(banStatus.banned_until).toLocaleString('vi-VN')
+                  : null
+
+                toast({
+                  title: 'Tài khoản bị khóa tạm thời',
+                  description: banStatus?.reason
+                    ? `${banStatus.reason}${bannedUntil ? ` (mở khóa sau: ${bannedUntil})` : ''}`
+                    : 'Bạn đã bị khóa tạm thời do đăng nhập sai quá nhiều lần.',
+                  variant: 'destructive'
+                })
+                setLoading(false)
+                return
+              }
+            } else {
+              console.error('Failed to log login attempt:', logData.error)
+            }
+          } catch (logError) {
+            console.error('Log login attempt error:', logError)
+          }
+
           toast({
             title: 'Lỗi đăng nhập',
             description: error.message,

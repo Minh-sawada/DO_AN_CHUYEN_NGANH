@@ -1,66 +1,550 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { requireAuth } from '@/lib/auth-utils'
 
 interface Source {
   id: string | number;
   title: string;
   article_reference: string | null;
-  source: string;
+  source: string | null;
+  link: string | null; // Link trực tiếp đến văn bản pháp luật
+  so_hieu: string | null;
+  loai_van_ban: string | null;
   category: string;
+}
+
+// Hàm kiểm tra xem query có phải là câu chào đơn giản không
+function isSimpleGreeting(query: string): boolean {
+  const normalizedQuery = query.toLowerCase().trim()
+  const greetingPatterns = [
+    /^(hello|hi|hey|chào|chào bạn|chào anh|chào chị|chào em|xin chào|chào buổi sáng|chào buổi chiều|chào buổi tối)$/,
+    /^(hế lô|hê lô|hê lô bạn|hế lô bạn)$/,
+    /^(good morning|good afternoon|good evening)$/,
+    /^(chào|hi|hello)\s*[!?.]*$/,
+  ]
+  
+  return greetingPatterns.some(pattern => pattern.test(normalizedQuery))
+}
+
+// Hàm kiểm tra xem query có yêu cầu trích nguồn rõ ràng không
+function hasExplicitSourceRequest(query: string): boolean {
+  const normalizedQuery = query.toLowerCase().trim()
+  
+  // Các từ khóa yêu cầu trích nguồn rõ ràng
+  const sourceRequestPatterns = [
+    /(trích|nguồn|tham khảo|dẫn chứng|chứng minh|theo luật|căn cứ|theo quy định|theo điều|theo khoản)/i,
+    /(luật nào|quy định nào|điều nào|khoản nào|văn bản nào)/i,
+    /(cho tôi biết|hãy cho|gửi|gửi cho|trích dẫn|liệt kê)/i
+  ]
+  
+  return sourceRequestPatterns.some(pattern => pattern.test(normalizedQuery))
+}
+
+// Hàm kiểm tra xem query có liên quan đến pháp luật không
+function isLegalRelatedQuery(query: string): boolean {
+  const normalizedQuery = query.toLowerCase().trim()
+  
+  // Các từ khóa liên quan đến pháp luật
+  const legalKeywords = [
+    'luật', 'pháp luật', 'pháp lý', 'quy định', 'nghị định', 'thông tư',
+    'quyết định', 'văn bản pháp luật', 'điều luật', 'khoản', 'điều',
+    'luật sư', 'tư vấn pháp luật', 'tranh chấp', 'hợp đồng', 'thỏa thuận',
+    'quyền', 'nghĩa vụ', 'trách nhiệm', 'vi phạm', 'xử phạt', 'phạt',
+    'tòa án', 'tòa', 'kiện', 'khởi kiện', 'bồi thường', 'thiệt hại',
+    'pháp nhân', 'cá nhân', 'doanh nghiệp', 'công ty', 'thành lập',
+    'giấy phép', 'đăng ký', 'thủ tục', 'hành chính', 'dân sự', 'hình sự',
+    'lao động', 'thuế', 'bảo hiểm', 'sở hữu', 'tài sản', 'thừa kế',
+    'hôn nhân', 'gia đình', 'ly hôn', 'con cái', 'nuôi dưỡng',
+    // Logistics, vận chuyển, vận tải
+    'logistics', 'vận chuyển', 'vận tải', 'giao hàng', 'vận chuyển hàng hóa',
+    'vận tải hàng hóa', 'vận tải biển', 'vận tải đường bộ', 'vận tải đường sắt',
+    'vận tải hàng không', 'kho bãi', 'lưu kho', 'bảo quản hàng hóa',
+    // Buôn lậu, hàng lậu, gian lận thương mại
+    'buôn lậu', 'hàng lậu', 'lậu', 'gian lận thương mại', 'hàng giả',
+    'vận chuyển trái phép', 'nhập khẩu trái phép', 'xuất khẩu trái phép',
+    // Hải quan, thuế quan
+    'hải quan', 'thuế quan', 'thuế nhập khẩu', 'thuế xuất khẩu', 'kiểm tra hải quan',
+    // Các từ khóa tiếng Anh
+    'law', 'legal', 'regulation', 'decree', 'circular', 'decision',
+    'contract', 'dispute', 'court', 'lawsuit', 'compensation',
+    'logistics', 'transport', 'shipping', 'smuggling', 'customs'
+  ]
+  
+  // Kiểm tra có chứa từ khóa pháp luật
+  const hasLegalKeyword = legalKeywords.some(keyword => normalizedQuery.includes(keyword))
+  
+  // Kiểm tra có pattern số hiệu văn bản pháp luật (ví dụ: 25/2017/QĐ-UBND)
+  const hasLawNumberPattern = /\d{1,4}\/\d{4}\/(QĐ|NĐ|TT|NQ|KH|CT|PL|L)-[A-Z]+/i.test(query)
+  
+  return hasLegalKeyword || hasLawNumberPattern
+}
+
+// Hàm kiểm tra xem query có phải là câu hỏi tiếp theo dựa trên context không
+function isFollowUpQuestion(query: string, previousMessages: any[]): boolean {
+  const normalizedQuery = query.toLowerCase().trim()
+  
+  // Các từ khóa cho câu hỏi tiếp theo
+  const followUpPatterns = [
+    /^(tóm lại|tổng kết|kết luận|vậy|thì|vậy thì)/i,
+    /(làm gì|phải làm|nên làm|cần làm|bước tiếp theo|tiếp theo)/i,
+    /(giải thích|nói rõ|chi tiết|thêm|nữa)/i,
+    /(còn gì|gì nữa|khác)/i,
+    /^(ok|okay|được|hiểu|rồi)/i
+  ]
+  
+  // Nếu có messages trước đó và query ngắn hoặc có pattern follow-up
+  const hasFollowUpPattern = followUpPatterns.some(pattern => pattern.test(normalizedQuery))
+  const isShortQuery = normalizedQuery.length < 50 && previousMessages.length > 0
+  
+  return hasFollowUpPattern || (isShortQuery && previousMessages.length > 0)
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // Parse request body trước để có clientUserId
+    const body = await request.json()
+    const { query, messages: previousMessages = [], userId: clientUserId } = body
+    
+    // Lấy userId từ cookies - dùng cách giống các route khác
+    const cookieStore = await cookies()
+    const allCookies = cookieStore.getAll()
+    
+    // Log request headers để debug
+    const cookieHeader = request.headers.get('cookie')
+    console.log('🔍 Chat-enhanced: Checking auth...', {
+      cookiesCount: allCookies.length,
+      cookieNames: allCookies.map(c => c.name),
+      hasSupabaseCookies: allCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-')),
+      hasCookieHeader: !!cookieHeader,
+      cookieHeaderLength: cookieHeader?.length || 0,
+      hasClientUserId: !!clientUserId
+    })
+    
+    const authSupabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll()
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options)
+            })
+          },
+        },
+      }
+    )
+
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    const { query, userId } = await request.json()
+
+    // Thử lấy user từ cookies - dùng getUser() trước
+    let user = null
+    let userError = null
+    
+    const { data: { user: userFromGetUser }, error: getUserError } = await authSupabase.auth.getUser()
+    user = userFromGetUser
+    userError = getUserError
+    
+    // Nếu getUser() fail, thử getSession() như fallback
+    if (userError || !user) {
+      console.log('⚠️ getUser() failed, trying getSession()...', {
+        error: userError?.message
+      })
+      const { data: { session }, error: sessionError } = await authSupabase.auth.getSession()
+      if (session?.user && !sessionError) {
+        user = session.user
+        userError = null
+        console.log('✅ Got user from getSession() fallback')
+      }
+    }
+    
+    let userId: string | null = null
+    
+    // Ưu tiên dùng user từ cookies
+    if (user) {
+      userId = user.id
+      console.log('✅ Chat-enhanced: User authenticated from cookies:', userId)
+    } 
+    // Nếu không có user từ cookies nhưng có clientUserId, validate clientUserId
+    else if (clientUserId) {
+      console.log('⚠️ No user from cookies, validating clientUserId from body...', clientUserId)
+      // Validate user có tồn tại không
+      const { data: userData, error: userCheckError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', clientUserId)
+        .single()
+      
+      if (userCheckError || !userData) {
+        console.error('❌ Invalid userId from client:', userCheckError?.message)
+        return NextResponse.json({ 
+          success: false, 
+          error: 'Unauthorized',
+          response: 'Vui lòng đăng nhập để sử dụng tính năng chat.'
+        }, { status: 401 })
+      }
+      
+      userId = clientUserId
+      console.log('✅ Chat-enhanced: User validated from body:', userId)
+    }
+    
+    // Nếu vẫn không có userId, báo lỗi
+    if (!userId) {
+      console.error('❌ Auth error in chat-enhanced: No userId available', {
+        error: userError?.message || 'No user',
+        errorCode: userError?.status,
+        errorName: userError?.name,
+        hasCookies: allCookies.length > 0,
+        cookieNames: allCookies.map(c => c.name),
+        cookiesCount: allCookies.length,
+        hasClientUserId: !!clientUserId
+      })
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Unauthorized',
+        response: 'Vui lòng đăng nhập để sử dụng tính năng chat.'
+      }, { status: 401 })
+    }
 
     if (!query) {
       return NextResponse.json({ success: false, error: 'Query is required' }, { status: 400 })
     }
 
-    // 1. Tìm kiếm trong database local trước
-    const { data: localResults, error: localError } = await supabase
-      .from('laws')
-      .select('*')
-      .or(`content.ilike.%${query}%,title.ilike.%${query}%`)
-      .limit(5)
+    // Kiểm tra xem có phải câu hỏi tiếp theo không
+    const isFollowUp = isFollowUpQuestion(query, previousMessages)
+    
+    // Nếu là câu hỏi tiếp theo, tạo context từ messages trước
+    let conversationContext = ""
+    if (isFollowUp && previousMessages.length > 0) {
+      // Lấy 3-5 tin nhắn gần nhất để làm context
+      const recentMessages = previousMessages.slice(-6) // Lấy 6 tin nhắn gần nhất (3 cặp user-assistant)
+      conversationContext = recentMessages.map((msg: any) => {
+        const role = msg.role === 'user' ? 'Người dùng' : 'Trợ lý AI'
+        return `${role}: ${msg.content}`
+      }).join('\n\n')
+    }
 
+    // Nếu là câu hỏi tiếp theo, xử lý đặc biệt
+    if (isFollowUp && conversationContext) {
+      // Tạo response dựa trên context của cuộc hội thoại trước
+      const lastAssistantMessage = previousMessages.filter((m: any) => m.role === 'assistant').pop()
+      
+      if (lastAssistantMessage) {
+        const lastContent = lastAssistantMessage.content
+        
+        // Nếu user hỏi "tóm lại tui cần làm gì" hoặc tương tự
+        if (/(tóm lại.*làm gì|tổng kết.*làm|kết luận.*làm|cần làm gì|phải làm gì|nên làm gì)/i.test(query)) {
+          // Trích xuất các bước hành động từ câu trả lời trước
+          // Tìm các phần có "Các bước", "Bước", "Thực hiện", v.v.
+          const stepsSection = lastContent.match(/(?:Các bước|Bước|Thực hiện|Nên thực hiện|Cần thực hiện)[\s\S]{0,2000}/i)
+          
+          if (stepsSection) {
+            // Trích xuất các bước được đánh số
+            const actionSteps = stepsSection[0].match(/\d+\.\s*[^\n]+(?:\n+[^\d\n]+)*/g) || []
+            if (actionSteps.length > 0) {
+              return NextResponse.json({
+                response: `Dựa trên câu trả lời trước, đây là các bước bạn cần thực hiện:\n\n${actionSteps.join('\n\n')}\n\nBạn có câu hỏi gì về các bước này không?`,
+                sources: [],
+                matched_ids: [],
+                total_sources: 0,
+                search_method: 'follow-up'
+              })
+            }
+          }
+          
+          // Nếu không tìm thấy bước cụ thể, tóm tắt lại phần quan trọng
+          const importantParts = lastContent.match(/(?:Công ty|Bạn|Người|Cần|Phải|Nên)[^\.]+\./g) || []
+          if (importantParts.length > 0) {
+            const summary = importantParts.slice(0, 5).join('\n\n')
+            return NextResponse.json({
+              response: `Dựa trên câu trả lời trước, tóm tắt những điều bạn cần làm:\n\n${summary}\n\nBạn có muốn tôi giải thích thêm phần nào không?`,
+              sources: [],
+              matched_ids: [],
+              total_sources: 0,
+              search_method: 'follow-up'
+            })
+          }
+        }
+        
+        // Nếu user hỏi "tóm lại" đơn giản
+        if (/^(tóm lại|tổng kết|kết luận|vậy|thì|vậy thì)/i.test(query)) {
+          // Tóm tắt lại câu trả lời trước (lấy phần đầu quan trọng)
+          const summary = lastContent.split('\n\n').slice(0, 3).join('\n\n')
+          return NextResponse.json({
+            response: `Dựa trên câu trả lời trước, tóm tắt lại:\n\n${summary}\n\nBạn có muốn tôi giải thích thêm phần nào không?`,
+            sources: [],
+            matched_ids: [],
+            total_sources: 0,
+            search_method: 'follow-up'
+          })
+        }
+        
+        // Nếu user hỏi "làm gì", "phải làm", v.v.
+        if (/(làm gì|phải làm|nên làm|cần làm|bước tiếp theo|tiếp theo)/i.test(query)) {
+          // Trích xuất các bước hành động từ câu trả lời trước
+          const actionSteps = lastContent.match(/\d+\.\s*[^\n]+(?:\n+[^\d\n]+)*/g) || []
+          if (actionSteps.length > 0) {
+            return NextResponse.json({
+              response: `Dựa trên câu trả lời trước, các bước bạn cần thực hiện:\n\n${actionSteps.join('\n\n')}\n\nBạn có câu hỏi gì về các bước này không?`,
+              sources: [],
+              matched_ids: [],
+              total_sources: 0,
+              search_method: 'follow-up'
+            })
+          }
+        }
+      }
+      
+      // Nếu không match pattern đặc biệt, vẫn xử lý như bình thường nhưng có context
+      // (sẽ được xử lý ở phần dưới)
+    }
+
+    // Nếu là câu chào đơn giản, trả về response đơn giản không có sources
+    if (isSimpleGreeting(query)) {
+      const greetingResponse = "Chào bạn! Tôi là trợ lý AI chuyên về pháp luật Việt Nam. Tôi có thể hỗ trợ bạn trả lời các câu hỏi về pháp luật, văn bản pháp luật, quy định pháp lý và các vấn đề liên quan. Bạn có câu hỏi gì về pháp luật không?"
+      
+      // Log activity (userId luôn có vì đã requireAuth)
+      try {
+        const clientIP = request.headers.get('x-forwarded-for') || 
+                        request.headers.get('x-real-ip') || 
+                        'unknown'
+        const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+        await supabase.rpc('log_user_activity', {
+          p_user_id: userId,
+          p_activity_type: 'query',
+          p_action: 'chat_query',
+          p_details: {
+            query: query.substring(0, 500),
+            sourcesCount: 0,
+            searchMethod: 'greeting',
+            matchedIds: []
+          },
+          p_ip_address: clientIP,
+          p_user_agent: clientUserAgent,
+          p_risk_level: 'low'
+        } as any)
+      } catch (logError) {
+        console.error('Failed to log chat activity:', logError)
+      }
+
+      return NextResponse.json({
+        response: greetingResponse,
+        sources: [], // Không có sources cho câu chào
+        matched_ids: [],
+        total_sources: 0,
+        search_method: 'greeting'
+      })
+    }
+
+    // 1. Nếu có n8n webhook và query liên quan đến pháp luật, gọi n8n trước
+    const n8nWebhookUrl = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK
+    const shouldSearch = isLegalRelatedQuery(query)
+    
+    if (n8nWebhookUrl && shouldSearch) {
+      try {
+        console.log('🔄 Calling n8n webhook:', n8nWebhookUrl)
+        const n8nResponse = await fetch(n8nWebhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            query: query,
+            userId: userId || null
+          }),
+        })
+
+        if (n8nResponse.ok) {
+          const n8nData = await n8nResponse.json()
+          console.log('✅ n8n webhook response received')
+          
+          // Chỉ trả về sources nếu thực sự có kết quả pháp luật và normalize format
+          const validSources = (n8nData.sources || []).filter((source: any) => 
+            source && (source.title || source.id)
+          ).map((source: any) => ({
+            id: source.id,
+            title: source.title || 'Văn bản pháp luật',
+            article_reference: source.article_reference || null,
+            source: source.source || source.link || null,
+            link: source.link || source.source || null, // Đảm bảo có link
+            so_hieu: source.so_hieu || null,
+            loai_van_ban: source.loai_van_ban || null,
+            category: source.category || 'n8n'
+          }))
+          
+          // Log activity (userId luôn có vì đã requireAuth)
+          try {
+            const clientIP = request.headers.get('x-forwarded-for') || 
+                            request.headers.get('x-real-ip') || 
+                            'unknown'
+            const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+            await supabase.rpc('log_user_activity', {
+              p_user_id: userId,
+              p_activity_type: 'query',
+              p_action: 'chat_query',
+              p_details: {
+                query: query.substring(0, 500),
+                sourcesCount: validSources.length,
+                searchMethod: 'n8n',
+                matchedIds: n8nData.matched_ids || []
+              },
+              p_ip_address: clientIP,
+              p_user_agent: clientUserAgent,
+              p_risk_level: 'low'
+            } as any)
+          } catch (logError) {
+            console.error('Failed to log chat activity:', logError)
+          }
+
+          // Lưu query log
+          try {
+            await supabase.from('query_logs').insert({
+              query: query,
+              response: n8nData.response || '',
+              user_id: userId,
+              sources_count: validSources.length
+            })
+          } catch (logError) {
+            console.error('Error logging query:', logError)
+          }
+
+          // Kiểm tra xem user có yêu cầu trích nguồn rõ ràng không
+          const explicitSourceRequest = hasExplicitSourceRequest(query)
+          
+          return NextResponse.json({
+            response: n8nData.response || 'Xin lỗi, không thể xử lý câu hỏi của bạn.',
+            sources: explicitSourceRequest ? validSources : [], // Chỉ trả về sources nếu user yêu cầu
+            matched_ids: n8nData.matched_ids || [],
+            total_sources: explicitSourceRequest ? validSources.length : 0,
+            search_method: 'n8n'
+          })
+        } else {
+          console.warn('⚠️ n8n webhook returned error, falling back to local search')
+        }
+      } catch (n8nError) {
+        console.error('❌ Error calling n8n webhook:', n8nError)
+        console.log('🔄 Falling back to local search')
+      }
+    }
+
+    // 2. Chỉ tìm kiếm nếu query liên quan đến pháp luật (nếu chưa dùng n8n)
     let sources: Source[] = []
     let matched_ids: (string | number)[] = []
     let context = ""
 
+    if (shouldSearch) {
+      // Tìm kiếm trong database local với độ chính xác cao hơn
+      // Tách query thành các từ khóa để tìm kiếm chính xác hơn
+      const queryWords = query.toLowerCase().split(/\s+/).filter((word: string) => word.length > 2)
+      
+      // Tìm kiếm với độ ưu tiên: title trước, sau đó mới đến content
+      let searchQuery = supabase
+        .from('laws')
+        .select('*')
+      
+      // Nếu có nhiều từ khóa, tìm kiếm chính xác hơn
+      if (queryWords.length > 0) {
+        // Tìm trong title trước (ưu tiên cao)
+        const titleConditions = queryWords.map((word: string) => `title.ilike.%${word}%`).join(',')
+        // Tìm trong content (ưu tiên thấp hơn)
+        const contentConditions = queryWords.map((word: string) => `content.ilike.%${word}%`).join(',')
+        
+        searchQuery = searchQuery.or(`${titleConditions},${contentConditions}`)
+      } else {
+        // Nếu query ngắn, tìm kiếm đơn giản
+        searchQuery = searchQuery.or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+      }
+      
+      const { data: localResults, error: localError } = await searchQuery.limit(10) // Lấy nhiều hơn để filter
+
     if (!localError && localResults && localResults.length > 0) {
-      // Có kết quả từ database local
-      sources = localResults.map(law => ({
+      // Filter và rank kết quả theo độ liên quan
+      const queryLower = query.toLowerCase()
+      const rankedResults = localResults
+        .map((law: any) => {
+          const title = (law.title || '').toLowerCase()
+          const content = (law.content || '').toLowerCase()
+          const soHieu = (law.so_hieu || '').toLowerCase()
+          
+          // Tính điểm liên quan
+          let relevanceScore = 0
+          
+          // Title match = điểm cao nhất
+          if (title.includes(queryLower)) relevanceScore += 10
+          queryWords.forEach((word: string) => {
+            if (title.includes(word)) relevanceScore += 5
+          })
+          
+          // Số hiệu match = điểm cao
+          if (soHieu.includes(queryLower)) relevanceScore += 8
+          
+          // Content match = điểm thấp hơn
+          if (content.includes(queryLower)) relevanceScore += 2
+          queryWords.forEach((word: string) => {
+            if (content.includes(word)) relevanceScore += 1
+          })
+          
+          return { ...law, relevanceScore }
+        })
+        .filter((law: any) => law.relevanceScore >= 3) // Chỉ lấy kết quả có điểm >= 3 (đảm bảo liên quan)
+        .sort((a: any, b: any) => b.relevanceScore - a.relevanceScore) // Sắp xếp theo điểm giảm dần
+        .slice(0, 5) // Chỉ lấy 5 kết quả tốt nhất
+      
+      // Có kết quả từ database local sau khi filter
+      sources = rankedResults.map((law: any) => {
+        // Tạo link tự động từ số hiệu nếu không có link
+        let link = law.link || law.source || null
+        if (!link && law.so_hieu) {
+          // Tạo link tìm kiếm trên thuvienphapluat.vn
+          const searchQuery = encodeURIComponent(law.so_hieu)
+          link = `https://thuvienphapluat.vn/van-ban/tim-kiem?keyword=${searchQuery}`
+        }
+        
+        return {
         id: law.id,
-        title: law.title,
-        article_reference: law.article_reference,
-        source: law.source,
+          title: law.title || 'Văn bản pháp luật',
+          article_reference: law.article_reference || null,
+          source: law.source || law.link || link || null,
+          link: link, // Link trực tiếp đến văn bản
+          so_hieu: law.so_hieu || null,
+          loai_van_ban: law.loai_van_ban || null,
         category: law.category || 'Local Database'
-      }))
+        }
+      })
       
-      matched_ids = localResults.map(law => law.id)
+      // Chỉ lấy IDs từ kết quả đã được filter và rank
+      matched_ids = rankedResults.map((law: any) => law.id)
       
-      context = localResults.map(law => 
+      // Tạo context từ kết quả đã được filter (chỉ các văn bản thực sự liên quan)
+      context = rankedResults.map((law: any) => 
         `Tiêu đề: ${law.title}\n` +
         `Điều/Khoản: ${law.article_reference || 'N/A'}\n` +
-        `Nội dung: ${law.content}\n` +
-        `Nguồn: ${law.source || 'N/A'}\n`
+        `Nội dung: ${law.content || law.noi_dung || 'N/A'}\n` +
+        `Nguồn: ${law.source || law.link || 'N/A'}\n`
       ).join('\n---\n')
     } else {
       // Không có kết quả từ database local, tìm kiếm từ các nguồn khác
       const externalResults = await searchExternalSources(query)
       
       if (externalResults.length > 0) {
-        sources = externalResults.map(result => ({
+        sources = externalResults.map((result: any) => ({
           id: result.id,
           title: result.title,
-          article_reference: result.article_reference,
-          source: result.source,
-          category: result.category
+          article_reference: result.article_reference || null,
+          source: result.source || result.link || null,
+          link: result.link || result.source || null, // Link trực tiếp đến văn bản
+          so_hieu: result.so_hieu || null,
+          loai_van_ban: result.loai_van_ban || null,
+          category: result.category || 'External Source'
         }))
         
         matched_ids = externalResults.map(result => result.id)
@@ -73,80 +557,108 @@ export async function POST(request: NextRequest) {
         ).join('\n---\n')
       }
     }
-
-    // 2. Tạo response dựa trên context
-    let response = ""
-    
-    if (context) {
-      response = `Dựa trên các văn bản pháp luật liên quan, tôi có thể trả lời câu hỏi của bạn:\n\n${query}\n\nThông tin tham khảo từ các nguồn pháp luật:\n${context}\n\nLưu ý: Đây là thông tin tham khảo, bạn nên tham khảo thêm ý kiến của luật sư hoặc cơ quan có thẩm quyền để có lời khuyên chính xác nhất.`
-    } else {
-      response = `Xin lỗi, tôi không tìm thấy thông tin pháp luật cụ thể liên quan đến câu hỏi "${query}" trong cơ sở dữ liệu hiện tại. Bạn có thể:\n\n1. Thử diễn đạt câu hỏi theo cách khác\n2. Liên hệ với luật sư để được tư vấn chuyên sâu\n3. Tham khảo các nguồn pháp luật chính thức như:\n   - Thư viện Pháp luật (thuvienphapluat.vn)\n   - Cổng thông tin điện tử Chính phủ (vanban.chinhphu.vn)`
     }
 
-    // 3. Lưu query log
+    // 3. Kiểm tra xem user có yêu cầu trích nguồn rõ ràng không
+    const explicitSourceRequest = hasExplicitSourceRequest(query)
+
+    // 4. Tạo response dựa trên context
+    let response = ""
+    
+    if (context && sources.length > 0) {
+      // Có kết quả tìm kiếm pháp luật
+      if (explicitSourceRequest) {
+        // User yêu cầu trích nguồn rõ ràng - hiển thị sources
+      response = `Dựa trên các văn bản pháp luật liên quan, tôi có thể trả lời câu hỏi của bạn:\n\n${query}\n\nThông tin tham khảo từ các nguồn pháp luật:\n${context}\n\nLưu ý: Đây là thông tin tham khảo, bạn nên tham khảo thêm ý kiến của luật sư hoặc cơ quan có thẩm quyền để có lời khuyên chính xác nhất.`
+    } else {
+        // User không yêu cầu trích nguồn - chỉ trả lời, không hiển thị sources
+        // Tạo response dựa trên context nhưng không đề cập đến sources
+        response = `Dựa trên các quy định pháp luật Việt Nam, tôi có thể trả lời câu hỏi của bạn:\n\n${query}\n\nLưu ý: Đây là thông tin tham khảo, bạn nên tham khảo thêm ý kiến của luật sư hoặc cơ quan có thẩm quyền để có lời khuyên chính xác nhất.`
+        // Xóa sources để không hiển thị "Nguồn tham khảo"
+        sources = []
+      }
+    } else if (shouldSearch && sources.length === 0) {
+      // Đã tìm kiếm nhưng không có kết quả
+      response = `Xin lỗi, tôi không tìm thấy thông tin pháp luật cụ thể liên quan đến câu hỏi "${query}" trong cơ sở dữ liệu hiện tại. Bạn có thể:\n\n1. Thử diễn đạt câu hỏi theo cách khác\n2. Liên hệ với luật sư để được tư vấn chuyên sâu\n3. Tham khảo các nguồn pháp luật chính thức như:\n   - Thư viện Pháp luật (thuvienphapluat.vn)\n   - Cổng thông tin điện tử Chính phủ (vanban.chinhphu.vn)`
+      // Không có sources nên không hiển thị "Nguồn tham khảo"
+      sources = []
+    } else {
+      // Không phải câu hỏi về pháp luật - trả lời chung chung
+      response = `Tôi là trợ lý AI chuyên về pháp luật Việt Nam. Tôi có thể hỗ trợ bạn trả lời các câu hỏi về pháp luật, văn bản pháp luật, quy định pháp lý và các vấn đề liên quan.\n\nNếu bạn có câu hỏi về pháp luật, vui lòng đặt câu hỏi cụ thể. Ví dụ:\n- "Quy định về hợp đồng lao động"\n- "Luật về thừa kế"\n- "Quyền và nghĩa vụ của người lao động"`
+      // Không có sources cho câu hỏi không liên quan pháp luật
+      sources = []
+    }
+
+    // 5. Lưu query log
     try {
       await supabase.from('query_logs').insert({
         query: query,
         response: response,
-        user_id: userId || null,
+        user_id: userId,
         sources_count: sources.length
       })
     } catch (logError) {
       console.error('Error logging query:', logError)
     }
 
-    // 4. Log activity vào user_activities
-    if (userId) {
-      try {
-        const clientIP = request.headers.get('x-forwarded-for') || 
-                        request.headers.get('x-real-ip') || 
-                        'unknown'
-        const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+    // 6. Log activity vào user_activities (userId luôn có vì đã requireAuth)
+    try {
+      const clientIP = request.headers.get('x-forwarded-for') || 
+                      request.headers.get('x-real-ip') || 
+                      'unknown'
+      const clientUserAgent = request.headers.get('user-agent') || 'unknown'
 
-        console.log('Logging chat activity:', {
-          userId,
-          query: query.substring(0, 100),
-          sourcesCount: sources.length
-        })
+      console.log('Logging chat activity:', {
+        userId,
+        query: query.substring(0, 100),
+        sourcesCount: sources.length
+      })
 
-        const { data, error: logError } = await supabase.rpc('log_user_activity', {
-          p_user_id: userId,
-          p_activity_type: 'query',
-          p_action: 'chat_query',
-          p_details: {
-            query: query.substring(0, 500), // Giới hạn độ dài query
-            sourcesCount: sources.length,
-            searchMethod: localResults && localResults.length > 0 ? 'local' : 'external',
-            matchedIds: matched_ids
-          },
-          p_ip_address: clientIP,
-          p_user_agent: clientUserAgent,
-          p_risk_level: 'low'
-        } as any)
+      const { data, error: logError } = await supabase.rpc('log_user_activity', {
+        p_user_id: userId,
+        p_activity_type: 'query',
+        p_action: 'chat_query',
+        p_details: {
+          query: query.substring(0, 500), // Giới hạn độ dài query
+          sourcesCount: sources.length,
+          searchMethod: shouldSearch ? (sources.length > 0 ? 'local' : 'external') : 'none',
+          matchedIds: matched_ids
+        },
+        p_ip_address: clientIP,
+        p_user_agent: clientUserAgent,
+        p_risk_level: 'low'
+      } as any)
 
-        if (logError) {
-          console.error('Failed to log chat activity:', logError)
-        } else {
-          console.log('✅ Chat activity logged successfully:', data)
-        }
-      } catch (logError) {
+      if (logError) {
         console.error('Failed to log chat activity:', logError)
-        // Không throw - logging không nên làm gián đoạn flow chính
+      } else {
+        console.log('✅ Chat activity logged successfully:', data)
       }
-    } else {
-      console.log('⚠️ No user_id found, skipping logging')
+    } catch (logError) {
+      console.error('Failed to log chat activity:', logError)
+      // Không throw - logging không nên làm gián đoạn flow chính
     }
 
     return NextResponse.json({
       response: response,
-      sources: sources,
+      sources: sources, // Chỉ có sources khi thực sự tìm thấy kết quả pháp luật
       matched_ids: matched_ids,
       total_sources: sources.length,
-      search_method: localResults && localResults.length > 0 ? 'local' : 'external'
+      search_method: shouldSearch ? (sources.length > 0 ? 'local' : 'external') : 'none'
     })
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in enhanced chat:', error)
+    
+    // Xử lý lỗi authentication
+    if (error.message?.includes('Unauthorized') || error.message?.includes('login')) {
+      return NextResponse.json({ 
+        success: false, 
+        error: 'Unauthorized',
+        response: 'Vui lòng đăng nhập để sử dụng tính năng chat.'
+      }, { status: 401 })
+    }
+    
     return NextResponse.json({ 
       success: false, 
       error: 'Internal server error',

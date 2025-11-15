@@ -54,6 +54,7 @@ import {
   FileText
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/components/auth/AuthProvider'
 
 interface UserActivity {
   id: string
@@ -111,6 +112,7 @@ interface BannedUser {
 
 export function SystemManagement() {
   const { toast } = useToast()
+  const { user, profile } = useAuth() // Sử dụng useAuth để lấy user hiện tại
   const [activeTab, setActiveTab] = useState('user-logs')
   
   // User Activities state
@@ -184,6 +186,14 @@ export function SystemManagement() {
 
   const [currentUser, setCurrentUser] = useState<any>(null)
   const initialFetchRef = useRef<boolean>(false) // Ref để tránh fetch nhiều lần trong Strict Mode
+  
+  // Tạo currentUser từ useAuth hoặc state (fallback)
+  const effectiveCurrentUser = profile && user ? {
+    id: user.id,
+    email: user.email,
+    full_name: profile.full_name,
+    role: profile.role
+  } : currentUser
 
   useEffect(() => {
     // Fetch initial data - chỉ fetch 1 lần duy nhất (tránh Strict Mode double invoke)
@@ -1002,7 +1012,18 @@ export function SystemManagement() {
   }
 
   const handleBanUser = async () => {
-    if (!selectedUser || !banForm.reason || !currentUser?.id) return
+    const currentUserId = effectiveCurrentUser?.id || user?.id
+    
+    if (!selectedUser || !banForm.reason || !currentUserId) {
+      if (!currentUserId) {
+        toast({
+          title: 'Lỗi',
+          description: 'Không xác định được người thực hiện',
+          variant: 'destructive'
+        })
+      }
+      return
+    }
 
     try {
       const response = await fetch('/api/system/ban-user', {
@@ -1013,7 +1034,7 @@ export function SystemManagement() {
           reason: banForm.reason,
           ban_type: banForm.ban_type,
           duration_hours: banForm.ban_type === 'temporary' ? banForm.duration_hours : null,
-          banned_by: currentUser.id,
+          banned_by: currentUserId,
           notes: banForm.notes || null
         })
       })
@@ -1041,14 +1062,52 @@ export function SystemManagement() {
   }
 
   const handleUnbanUser = async () => {
-    if (!selectedUser || !currentUser?.id) return
+    const currentUserId = effectiveCurrentUser?.id || user?.id
+    
+    console.log('🔓 handleUnbanUser called:', { 
+      selectedUser, 
+      currentUserId,
+      effectiveCurrentUser,
+      user,
+      profile
+    })
+    
+    if (!selectedUser) {
+      console.error('❌ selectedUser is null/undefined')
+      toast({
+        title: 'Lỗi',
+        description: 'Vui lòng chọn user để unban',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    if (!currentUserId) {
+      console.error('❌ currentUserId is null/undefined', { effectiveCurrentUser, user, profile })
+      toast({
+        title: 'Lỗi',
+        description: 'Không xác định được người thực hiện. Vui lòng đăng nhập lại.',
+        variant: 'destructive'
+      })
+      return
+    }
 
     try {
-      const response = await fetch(`/api/system/ban-user?user_id=${selectedUser}&unbanned_by=${currentUser.id}`, {
+      console.log('🔓 Attempting to unban user:', selectedUser, 'by:', currentUserId)
+      
+      const response = await fetch(`/api/system/ban-user?user_id=${selectedUser}&unbanned_by=${currentUserId}`, {
         method: 'DELETE'
       })
 
+      // Kiểm tra response status trước khi parse JSON
+      if (!response.ok && response.status !== 404) {
+        const errorText = await response.text()
+        console.error('❌ Unban API error:', response.status, errorText)
+        throw new Error(errorText || `HTTP ${response.status}`)
+      }
+
       const result = await response.json()
+      console.log('🔓 Unban API result:', result)
 
       if (result.success) {
         toast({
@@ -1056,21 +1115,40 @@ export function SystemManagement() {
           description: result.message || 'Đã unban user thành công'
         })
         setUnbanDialogOpen(false)
-        fetchBannedUsers()
+        setSelectedUser(null) // Reset selected user
+        // Refresh danh sách
+        await Promise.all([
+          fetchBannedUsers(),
+          fetchUsers() // Refresh danh sách users để cập nhật trạng thái ban
+        ])
       } else {
-        throw new Error(result.error || 'Unban user thất bại')
+        // Xử lý trường hợp user không bị ban
+        if (response.status === 404) {
+          toast({
+            title: 'Thông báo',
+            description: result.error || 'User không bị ban',
+            variant: 'default'
+          })
+          setUnbanDialogOpen(false)
+          setSelectedUser(null)
+          fetchBannedUsers() // Refresh để đảm bảo UI đồng bộ
+        } else {
+          throw new Error(result.error || 'Unban user thất bại')
+        }
       }
     } catch (error: any) {
+      console.error('❌ Unban error:', error)
       toast({
         title: 'Lỗi',
-        description: error.message || 'Không thể unban user',
+        description: error.message || 'Không thể unban user. Vui lòng thử lại.',
         variant: 'destructive'
       })
     }
   }
 
   const handleUpdateSuspiciousStatus = async (id: string, status: string) => {
-    if (!currentUser?.id) return
+    const currentUserId = effectiveCurrentUser?.id || user?.id
+    if (!currentUserId) return
 
     try {
       const response = await fetch('/api/system/suspicious-activities', {
@@ -1079,7 +1157,7 @@ export function SystemManagement() {
         body: JSON.stringify({
           id,
           status,
-          reviewed_by: currentUser.id
+          reviewed_by: currentUserId
         })
       })
 
@@ -1580,9 +1658,9 @@ export function SystemManagement() {
               <CardTitle className="flex items-center justify-between">
                 <span>Quản lý người dùng</span>
                 <div className="flex items-center gap-2">
-                  {currentUser && (
-                    <Badge className={currentUser.role === 'admin' ? 'bg-red-600 text-white' : currentUser.role === 'editor' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white'}>
-                      Bạn: {currentUser.role === 'admin' ? 'Quản trị viên' : currentUser.role === 'editor' ? 'Biên tập viên' : 'Người dùng'}
+                  {effectiveCurrentUser && (
+                    <Badge className={effectiveCurrentUser.role === 'admin' ? 'bg-red-600 text-white' : effectiveCurrentUser.role === 'editor' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white'}>
+                      Bạn: {effectiveCurrentUser.role === 'admin' ? 'Quản trị viên' : effectiveCurrentUser.role === 'editor' ? 'Biên tập viên' : 'Người dùng'}
                     </Badge>
                   )}
                   <Button
@@ -1598,8 +1676,8 @@ export function SystemManagement() {
               </CardTitle>
               <CardDescription>
                 Quản lý vai trò và quyền của người dùng trong hệ thống. 
-                {currentUser?.role === 'admin' && ' Bạn có thể xóa user có quyền thấp hơn (Editor, User).'}
-                {(!currentUser || currentUser.role !== 'admin') && ' Chỉ Admin mới có thể xóa user.'}
+                {effectiveCurrentUser?.role === 'admin' && ' Bạn có thể xóa user có quyền thấp hơn (Editor, User).'}
+                {(!effectiveCurrentUser || effectiveCurrentUser.role !== 'admin') && ' Chỉ Admin mới có thể xóa user.'}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1788,28 +1866,28 @@ export function SystemManagement() {
                             {(() => {
                               // Debug: log để kiểm tra
                               console.log('Checking delete button for user:', {
-                                currentUserRole: currentUser?.role,
-                                currentUserId: currentUser?.id,
+                                currentUserRole: effectiveCurrentUser?.role,
+                                currentUserId: effectiveCurrentUser?.id,
                                 targetUserRole: user.role,
                                 targetUserId: user.id,
-                                isAdmin: currentUser?.role === 'admin',
-                                isSameUser: user.id === currentUser?.id
+                                isAdmin: effectiveCurrentUser?.role === 'admin',
+                                isSameUser: user.id === effectiveCurrentUser?.id
                               })
                               
                               // Chỉ admin mới thấy nút
-                              if (!currentUser || currentUser.role !== 'admin') {
+                              if (!effectiveCurrentUser || effectiveCurrentUser.role !== 'admin') {
                                 console.log('❌ Not showing delete button: not admin')
                                 return null
                               }
                               
                               // Không cho xóa chính mình
-                              if (user.id === currentUser.id) {
+                              if (user.id === effectiveCurrentUser.id) {
                                 console.log('❌ Not showing delete button: same user')
                                 return null
                               }
                               
                               // Tính level quyền: admin=3, editor=2, user=1
-                              const currentLevel = currentUser.role === 'admin' ? 3 : currentUser.role === 'editor' ? 2 : 1
+                              const currentLevel = effectiveCurrentUser.role === 'admin' ? 3 : effectiveCurrentUser.role === 'editor' ? 2 : 1
                               const targetLevel = user.role === 'admin' ? 3 : user.role === 'editor' ? 2 : 1
                               
                               // Chỉ xóa được user có quyền thấp hơn
@@ -2075,6 +2153,15 @@ export function SystemManagement() {
                                 size="sm"
                                 variant="outline"
                                 onClick={() => {
+                                  if (!ban.user_id) {
+                                    toast({
+                                      title: 'Lỗi',
+                                      description: 'Không tìm thấy user_id',
+                                      variant: 'destructive'
+                                    })
+                                    return
+                                  }
+                                  console.log('🔓 Setting selectedUser for unban:', ban.user_id)
                                   setSelectedUser(ban.user_id)
                                   setUnbanDialogOpen(true)
                                 }}
@@ -2097,17 +2184,37 @@ export function SystemManagement() {
       </Tabs>
 
       {/* Unban Dialog */}
-      <AlertDialog open={unbanDialogOpen} onOpenChange={setUnbanDialogOpen}>
+      <AlertDialog 
+        open={unbanDialogOpen} 
+        onOpenChange={(open) => {
+          setUnbanDialogOpen(open)
+          // Chỉ reset selectedUser khi đóng dialog, không reset khi mở
+          if (!open) {
+            setSelectedUser(null)
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Xác nhận Unban User</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc chắn muốn unban user này? User sẽ có thể sử dụng hệ thống lại ngay lập tức.
+              {selectedUser ? (
+                <>
+                  Bạn có chắc chắn muốn unban user <strong>{selectedUser}</strong>? User sẽ có thể sử dụng hệ thống lại ngay lập tức.
+                </>
+              ) : (
+                'Bạn có chắc chắn muốn unban user này? User sẽ có thể sử dụng hệ thống lại ngay lập tức.'
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Hủy</AlertDialogCancel>
-            <AlertDialogAction onClick={handleUnbanUser}>Xác nhận Unban</AlertDialogAction>
+            <AlertDialogAction 
+              onClick={handleUnbanUser}
+              disabled={!selectedUser}
+            >
+              Xác nhận Unban
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

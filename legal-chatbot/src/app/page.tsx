@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useAuth } from '@/components/auth/AuthProvider'
-import { ChatInterfaceWithTabs } from '@/components/chat/ChatInterfaceWithTabs'
+import { ChatLayout } from '@/components/chat/ChatLayout'
 import { Header } from '@/components/layout/Header'
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'
 
@@ -11,6 +11,18 @@ export default function HomePage() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  // Redirect đến trang login nếu chưa đăng nhập
+  useEffect(() => {
+    if (!user && !loading) {
+      // Lưu URL hiện tại để redirect lại sau khi đăng nhập (nếu cần)
+      const currentPath = window.location.pathname + window.location.search
+      if (currentPath !== '/login') {
+        sessionStorage.setItem('redirectAfterLogin', currentPath)
+      }
+      router.push('/login')
+    }
+  }, [user, loading, router])
 
   // Xử lý code và error từ Supabase callback
   useEffect(() => {
@@ -138,21 +150,18 @@ export default function HomePage() {
     return <LoadingSpinner />
   }
 
-  // Luôn hiển thị chat interface, không cần đăng nhập
+  // Nếu chưa đăng nhập, không hiển thị gì (sẽ redirect)
+  if (!user) {
+    return <LoadingSpinner />
+  }
+
+  // Chỉ hiển thị chat interface khi đã đăng nhập
   return (
     <div className="h-screen flex flex-col bg-gray-50 overflow-hidden">
       <Header />
       <main className="flex-1 overflow-hidden">
-        {/* Chat Interface - Full Screen Claude Style */}
-        <div className="h-full flex">
-          {/* Main Chat Area */}
-          <div className="flex-1 flex flex-col bg-white">
-            {/* Chat Interface */}
-            <div className="flex-1 overflow-hidden">
-              <ChatInterfaceWithTabs />
-            </div>
-          </div>
-        </div>
+        {/* Chat Layout với Sidebar - ChatGPT Style */}
+        <ChatLayout />
       </main>
     </div>
   )
