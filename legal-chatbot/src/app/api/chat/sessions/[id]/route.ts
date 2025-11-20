@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth, createSupabaseServerClient } from '@/lib/auth-utils'
+import { supabaseAdmin } from '@/lib/supabase'
 
 // DELETE - Xóa chat session
 export async function DELETE(
@@ -32,6 +33,29 @@ export async function DELETE(
     if (error) {
       console.error('Error deleting session:', error)
       throw new Error('Failed to delete session')
+    }
+
+    // Log delete session action
+    try {
+      const clientIP = request.headers.get('x-forwarded-for') || 
+                      request.headers.get('x-real-ip') || 
+                      'unknown'
+      const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+      await supabaseAdmin.rpc('log_user_activity', {
+        p_user_id: session.user.id,
+        p_activity_type: 'delete',
+        p_action: 'delete_chat_session',
+        p_details: {
+          session_id: sessionId
+        },
+        p_ip_address: clientIP,
+        p_user_agent: clientUserAgent,
+        p_risk_level: 'low'
+      } as any)
+    } catch (logError) {
+      console.error('Failed to log delete session activity:', logError)
+      // Không throw - logging không nên làm gián đoạn flow chính
     }
 
     return NextResponse.json({

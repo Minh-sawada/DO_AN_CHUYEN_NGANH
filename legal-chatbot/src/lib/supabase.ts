@@ -29,17 +29,42 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 })
 
 // Override console.error để filter out refresh token errors
+// Chỉ chạy một lần và an toàn cho hydration - dùng useEffect để chạy sau khi component mount
 if (typeof window !== 'undefined') {
-  const originalError = console.error
-  console.error = (...args: any[]) => {
-    const errorMessage = args.join(' ')
-    // Bỏ qua các lỗi refresh token
-    if (errorMessage.includes('Refresh Token') || 
-        errorMessage.includes('refresh_token') ||
-        errorMessage.includes('Invalid Refresh Token')) {
-      return // Không log error này
+  // Chạy sau khi DOM đã load để tránh hydration error
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setupConsoleErrorOverride()
+    })
+  } else {
+    // DOM đã load, chạy ngay nhưng dùng setTimeout để tránh hydration
+    setTimeout(setupConsoleErrorOverride, 0)
+  }
+}
+
+function setupConsoleErrorOverride() {
+  // Kiểm tra xem đã override chưa để tránh override nhiều lần
+  if (!(console.error as any).__supabase_override__) {
+    const originalError = console.error
+    const wrappedError = (...args: any[]) => {
+      const errorMessage = args.join(' ')
+      // Bỏ qua các lỗi refresh token
+      if (errorMessage.includes('Refresh Token') || 
+          errorMessage.includes('refresh_token') ||
+          errorMessage.includes('Invalid Refresh Token')) {
+        return // Không log error này
+      }
+      // Bỏ qua các lỗi liên quan đến user bị ban (expected behavior)
+      if (errorMessage.includes('User is banned') || 
+          errorMessage.includes('user is banned') ||
+          (errorMessage.includes('banned') && errorMessage.includes('logout'))) {
+        return // Không log error này
+      }
+      originalError.apply(console, args)
     }
-    originalError.apply(console, args)
+    // Đánh dấu đã override
+    ;(wrappedError as any).__supabase_override__ = true
+    console.error = wrappedError
   }
 }
 

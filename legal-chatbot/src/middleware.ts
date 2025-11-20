@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// Rate limit configuration
-const RATE_LIMIT_REQUESTS = 100; // requests per hour
+// Rate limit configuration - Tăng lên rất cao để không bị giới hạn
+const RATE_LIMIT_REQUESTS = 100000; // requests per hour (tăng từ 100 lên 100000)
 const RATE_LIMIT_WINDOW = 60 * 60; // 1 hour in seconds
 
 // Simple in-memory store for rate limiting

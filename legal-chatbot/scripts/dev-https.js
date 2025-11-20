@@ -22,15 +22,17 @@ function setupHttps() {
   if (!hasCert) {
     console.log('\n📝 Không tìm thấy certificate, đang tự động tạo...\n');
     try {
-      const { generateSelfSignedCert } = require('./generate-cert');
-      generateSelfSignedCert();
+      const { generateCert } = require('./generate-cert');
+      generateCert(); // Tự động dùng mkcert nếu có, hoặc self-signed nếu không
       hasCert = fs.existsSync(certPath) && fs.existsSync(keyPath);
     } catch (error) {
       console.error('\n❌ Không thể tự động tạo certificate!');
       console.error('\n📝 Cách khác:');
       console.error('1. Dùng localhost:3000 thay vì IP (không cần HTTPS)');
-      console.error('2. Hoặc cài mkcert: https://github.com/FiloSottile/mkcert');
-      console.error('3. Chạy: mkcert -install && mkcert localhost 10.15.87.114\n');
+      console.error('2. Hoặc cài mkcert (MIỄN PHÍ, CHUYÊN NGHIỆP):');
+      console.error('   - Windows: choco install mkcert hoặc scoop install mkcert');
+      console.error('   - Sau đó: mkcert -install');
+      console.error('   - Chạy lại script này\n');
       process.exit(1);
     }
   }

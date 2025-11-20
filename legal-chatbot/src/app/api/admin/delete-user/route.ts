@@ -126,6 +126,30 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: `Không thể xóa user: ${deleteError.message}` }, { status: 500 })
     }
 
+    // Log delete action
+    try {
+      const clientIP = request.headers.get('x-forwarded-for') || 
+                      request.headers.get('x-real-ip') || 
+                      'unknown'
+      const clientUserAgent = request.headers.get('user-agent') || 'unknown'
+
+      await supabaseAdmin.rpc('log_user_activity', {
+        p_user_id: session.user.id,
+        p_activity_type: 'admin_action',
+        p_action: 'delete_user',
+        p_details: {
+          deleted_user_id: targetUserId,
+          deleted_user_role: targetRole
+        },
+        p_ip_address: clientIP,
+        p_user_agent: clientUserAgent,
+        p_risk_level: 'high' // Delete user là hành động nguy hiểm
+      } as any)
+    } catch (logError) {
+      console.error('Failed to log delete user activity:', logError)
+      // Không throw - logging không nên làm gián đoạn flow chính
+    }
+
     return NextResponse.json({ success: true, message: 'Đã xóa user thành công' })
   } catch (error: any) {
     console.error('Error in delete-user route:', error)

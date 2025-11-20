@@ -16,6 +16,16 @@ export function Header() {
   const { user, profile, signOut } = useAuth()
   const [showLoginModal, setShowLoginModal] = useState(false)
 
+  // Debug: Log profile để kiểm tra
+  useEffect(() => {
+    if (user) {
+      console.log('Header - User:', user.id)
+      console.log('Header - Profile:', profile)
+      console.log('Header - Profile role:', profile?.role)
+      console.log('Header - Is admin?', profile?.role === 'admin')
+    }
+  }, [user, profile])
+
   // Listen for custom event to open login modal
   useEffect(() => {
     const handleOpenLoginModal = () => {
