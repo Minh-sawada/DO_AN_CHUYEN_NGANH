@@ -833,6 +833,19 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     })
   }
 
+  // Chuyển đổi tối thiểu Markdown -> HTML an toàn cho phần trả lời của trợ lý (chỉ hỗ trợ **bold** và xuống dòng)
+  const renderAssistantHtml = (text: string): string => {
+    const safe = (text || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    // Bold trước để tránh xung đột với các ký tự '*'
+    const withBold = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    // Giữ nguyên bullet gốc, chỉ chuyển \n -> <br/>
+    const withBreaks = withBold.replace(/\n/g, '<br/>')
+    return withBreaks
+  }
+
   return (
     <div className="flex flex-col h-full bg-white" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Messages Area - Full width, chat area chiếm toàn bộ */}
@@ -899,7 +912,10 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                         </div>
                       ) : (
                         <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-                          <p className="whitespace-pre-wrap text-gray-900 text-sm leading-relaxed mb-3">{message.content}</p>
+                          <div
+                            className="text-gray-900 text-sm leading-relaxed mb-3"
+                            dangerouslySetInnerHTML={{ __html: renderAssistantHtml(message.content) }}
+                          />
                           
                         {message.sources && message.sources.length > 0 && (
                           <div className="mt-4 pt-4 border-t border-gray-100">

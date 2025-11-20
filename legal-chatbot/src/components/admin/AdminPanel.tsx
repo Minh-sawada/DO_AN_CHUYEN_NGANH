@@ -18,7 +18,6 @@ import {
   MessageSquare, 
   MessageCircle,
   BarChart3, 
-  Loader2,
   Trash2,
   Database,
   Eye,
@@ -37,24 +36,10 @@ import { LawUpload } from './LawUpload'
 import { SystemManagement } from './SystemManagement'
 import { SupportChatAdmin } from './SupportChatAdmin'
 
-interface QueryLogWithProfile {
-  id: string // UUID
-  user_id: string | null
-  query: string
-  matched_ids: string[] | null // UUID[]
-  response: string | null
-  created_at: string
-  profiles?: {
-    full_name: string | null
-    email: string
-  } | null
-}
-
 export function AdminPanel() {
   const { profile } = useAuth()
   const [activeTab, setActiveTab] = useState('dashboard')
   const [laws, setLaws] = useState<Law[]>([])
-  const [queryLogs, setQueryLogs] = useState<QueryLogWithProfile[]>([])
   const [stats, setStats] = useState({
     totalLaws: 0,
     totalQueries: 0,
@@ -71,7 +56,6 @@ export function AdminPanel() {
   const { toast } = useToast()
 
   const [lawsLoading, setLawsLoading] = useState(false)
-  const [queryLogsLoading, setQueryLogsLoading] = useState(false)
   const [statsLoading, setStatsLoading] = useState(false)
   
   const isAdmin = profile?.role === 'admin'
@@ -90,9 +74,6 @@ export function AdminPanel() {
         fetchStats(),
     fetchLaws()
       ])
-      
-      // Load query logs sau (ít quan trọng hơn)
-    fetchQueryLogs()
     }
     
     loadInitialData()
@@ -186,31 +167,7 @@ export function AdminPanel() {
     }
   }
 
-  const fetchQueryLogs = async () => {
-    try {
-      setQueryLogsLoading(true)
-      
-      // Chỉ select các field cần thiết, giảm limit
-      const { data, error } = await supabase
-        .from('query_logs')
-        .select('id, user_id, query, created_at')
-        .order('created_at', { ascending: false })
-        .limit(30) // Giảm từ 50 xuống 30
-
-      if (error) throw error
-      // Map data để match với QueryLogWithProfile interface
-      const mappedLogs: QueryLogWithProfile[] = (data || []).map((log: any) => ({
-        ...log,
-        matched_ids: log.matched_ids || null,
-        response: log.response || null
-      }))
-      setQueryLogs(mappedLogs)
-    } catch (error) {
-      console.error('Error fetching query logs:', error)
-    } finally {
-      setQueryLogsLoading(false)
-    }
-  }
+  
 
   const fetchStats = async () => {
     try {
@@ -367,7 +324,7 @@ export function AdminPanel() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-6' : 'grid-cols-3'} bg-white shadow-sm`}>
+        <TabsList className={`grid w-full ${isAdmin ? 'grid-cols-5' : 'grid-cols-2'} bg-white shadow-sm`}>
           <TabsTrigger value="dashboard" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <BarChart3 className="h-4 w-4 mr-2" />
             Dashboard
@@ -375,10 +332,6 @@ export function AdminPanel() {
           <TabsTrigger value="upload" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
             <Upload className="h-4 w-4 mr-2" />
             Văn Bản Pháp Luật
-          </TabsTrigger>
-          <TabsTrigger value="queries" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <MessageSquare className="h-4 w-4 mr-2" />
-            Lịch sử truy vấn
           </TabsTrigger>
           {isAdmin && (
             <>
@@ -1059,43 +1012,7 @@ export function AdminPanel() {
         </div>
       </TabsContent>
 
-      <TabsContent value="queries" className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center space-x-2">
-              <MessageSquare className="h-5 w-5" />
-              <span>Lịch sử Truy vấn</span>
-            </CardTitle>
-            <CardDescription>
-              Theo dõi các câu hỏi của người dùng
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[400px]">
-              <div className="space-y-3">
-                {queryLogs.map((log) => (
-                  <div key={log.id} className="p-3 border rounded-lg">
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <p className="font-medium">{log.query}</p>
-                        <p className="text-sm text-gray-600">
-                          Người dùng: {log.profiles?.full_name || 'Không xác định'}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {new Date(log.created_at).toLocaleString('vi-VN')}
-                        </p>
-                      </div>
-                      <Badge variant="outline">
-                        {log.matched_ids?.length || 0} kết quả
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </CardContent>
-        </Card>
-      </TabsContent>
+      
 
 
       {isAdmin && (

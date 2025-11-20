@@ -81,13 +81,64 @@ function isLegalRelatedQuery(query: string): boolean {
   return hasLegalKeyword || hasLawNumberPattern
 }
 
+// Helper: remove Vietnamese diacritics for accent-insensitive matching
+function removeDiacritics(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/\p{Diacritic}+/gu, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+}
+
+// Heuristic summarizer: synthesize concise bullet points
+function summarizeText(text: string): string {
+  const cleaned = (text || '').trim()
+  if (!cleaned) return 'Không có nội dung trước đó để tóm tắt.'
+
+  // Prefer existing bullet/numbered lists
+  const lines = cleaned.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+  const bulletLines = lines.filter(l => /^[-*•\d+\.\)]\s*/.test(l))
+  if (bulletLines.length >= 3) {
+    return bulletLines.slice(0, 7).map(l => l.replace(/^[-*•\d+\.\)]\s*/, '• ')).join('\n')
+  }
+
+  // Sentence-based extraction
+  const sentences = cleaned
+    .replace(/\n+/g, ' ')
+    .split(/(?<=[\.!?])\s+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+
+  const keyPatterns = [
+    /không có|không tồn tại|không ban hành|chưa ban hành/i,
+    /là văn bản pháp luật cao nhất|văn bản pháp luật cao nhất|văn bản chính/i,
+    /hiệu lực|ngày có hiệu lực|ban hành/i,
+    /quy định về|bao gồm|gồm các/i,
+    /tóm lại|kết luận|tổng kết/i
+  ]
+
+  const picked: string[] = []
+  for (const s of sentences) {
+    if (keyPatterns.some(p => p.test(s))) picked.push(s)
+    if (picked.length >= 6) break
+  }
+
+  // Ensure we have at least some content
+  const basis = picked.length > 0 ? picked : sentences.slice(0, 6)
+
+  // Convert to concise bullets
+  const bullets = basis.map(s => `• ${s}`)
+  return bullets.join('\n')
+}
+
 // Hàm kiểm tra xem query có phải là câu hỏi tiếp theo dựa trên context không
 function isFollowUpQuestion(query: string, previousMessages: any[]): boolean {
   const normalizedQuery = query.toLowerCase().trim()
+  const noAccent = removeDiacritics(normalizedQuery)
   
   // Các từ khóa cho câu hỏi tiếp theo
   const followUpPatterns = [
-    /^(tóm lại|tổng kết|kết luận|vậy|thì|vậy thì)/i,
+    /^(tóm lại|tổng kết|kết luận|tóm tắt|tổng hợp|vậy|thì|vậy thì)/i,
     /(làm gì|phải làm|nên làm|cần làm|bước tiếp theo|tiếp theo)/i,
     /(giải thích|nói rõ|chi tiết|thêm|nữa)/i,
     /(còn gì|gì nữa|khác)/i,
@@ -96,6 +147,7 @@ function isFollowUpQuestion(query: string, previousMessages: any[]): boolean {
   
   // Nếu có messages trước đó và query ngắn hoặc có pattern follow-up
   const hasFollowUpPattern = followUpPatterns.some(pattern => pattern.test(normalizedQuery))
+    || /(tom lai|tong ket|ket luan|tom tat|tong hop|tiep theo)/i.test(noAccent)
   const isShortQuery = normalizedQuery.length < 50 && previousMessages.length > 0
   
   return hasFollowUpPattern || (isShortQuery && previousMessages.length > 0)
@@ -219,12 +271,14 @@ export async function POST(request: NextRequest) {
 
     // Kiểm tra xem có phải câu hỏi tiếp theo không
     const isFollowUp = isFollowUpQuestion(query, previousMessages)
+    // Phát hiện yêu cầu tóm tắt (có dấu/không dấu)
+    const wantsSummary = /(tóm tắt|tổng hợp)/i.test(query) || /(tom tat|tong hop)/i.test(removeDiacritics(query))
     
     // Nếu là câu hỏi tiếp theo, tạo context từ messages trước
     let conversationContext = ""
-    if (isFollowUp && previousMessages.length > 0) {
-      // Lấy 3-5 tin nhắn gần nhất để làm context
-      const recentMessages = previousMessages.slice(-6) // Lấy 6 tin nhắn gần nhất (3 cặp user-assistant)
+    if (previousMessages.length > 0) {
+      // Lấy 8-10 tin nhắn gần nhất để làm context
+      const recentMessages = previousMessages.slice(-10)
       conversationContext = recentMessages.map((msg: any) => {
         const role = msg.role === 'user' ? 'Người dùng' : 'Trợ lý AI'
         return `${role}: ${msg.content}`
@@ -239,6 +293,24 @@ export async function POST(request: NextRequest) {
       if (lastAssistantMessage) {
         const lastContent = lastAssistantMessage.content
         
+        // Nếu user yêu cầu "tóm tắt" nội dung trước đó
+        if (wantsSummary) {
+          // Nếu có webhook n8n và query pháp luật, ưu tiên xử lý ở nhánh n8n bên dưới
+          const n8nWebhookUrl = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK
+          const shouldSearch = isLegalRelatedQuery(query)
+          if (!(n8nWebhookUrl && shouldSearch)) {
+            const summary = summarizeText(lastContent)
+            return NextResponse.json({
+              response: `Tóm tắt ngắn gọn nội dung trước đó:\n\n${summary}`,
+              sources: [],
+              matched_ids: [],
+              total_sources: 0,
+              search_method: 'follow-up'
+            })
+          }
+          // Nếu có n8n và nên search, không return ở đây để xử lý tiếp ở nhánh n8n
+        }
+
         // Nếu user hỏi "tóm lại tui cần làm gì" hoặc tương tự
         if (/(tóm lại.*làm gì|tổng kết.*làm|kết luận.*làm|cần làm gì|phải làm gì|nên làm gì)/i.test(query)) {
           // Trích xuất các bước hành động từ câu trả lời trước
@@ -344,11 +416,11 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // 1. Nếu có n8n webhook và query liên quan đến pháp luật, gọi n8n trước
+    // 1. Nếu có n8n webhook, luôn gọi n8n trước (mọi câu hỏi)
     const n8nWebhookUrl = process.env.NEXT_PUBLIC_N8N_CHAT_WEBHOOK
     const shouldSearch = isLegalRelatedQuery(query)
     
-    if (n8nWebhookUrl && shouldSearch) {
+    if (n8nWebhookUrl) {
       try {
         console.log('🔄 Calling n8n webhook:', n8nWebhookUrl)
         const n8nResponse = await fetch(n8nWebhookUrl, {
@@ -358,7 +430,12 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             query: query,
-            userId: userId || null
+            userId: userId || null,
+            // Truyền thêm lịch sử và bối cảnh để n8n suy luận theo hội thoại
+            messages: previousMessages,
+            context: conversationContext,
+            topic: 'logistics',
+            wantsSummary
           }),
         })
 
@@ -420,11 +497,26 @@ export async function POST(request: NextRequest) {
           // Kiểm tra xem user có yêu cầu trích nguồn rõ ràng không
           const explicitSourceRequest = hasExplicitSourceRequest(query)
           
+          // Nếu là yêu cầu tóm tắt, tóm tắt n8n.response
+          if (wantsSummary) {
+            const summarized = summarizeText(n8nData.response || '')
+            return NextResponse.json({
+              response: `Tóm tắt ngắn gọn nội dung trước đó:\n\n${summarized}`,
+              sources: [],
+              matched_ids: n8nData.matched_ids || [],
+              total_sources: 0,
+              search_method: 'n8n-summary'
+            })
+          }
+
+          // Trả về chỉ link khi người dùng yêu cầu nguồn
+          const minimalSources = validSources.map((s: any) => ({ id: s.id, link: s.link || s.source || null }))
+
           return NextResponse.json({
             response: n8nData.response || 'Xin lỗi, không thể xử lý câu hỏi của bạn.',
-            sources: explicitSourceRequest ? validSources : [], // Chỉ trả về sources nếu user yêu cầu
+            sources: explicitSourceRequest ? minimalSources : [],
             matched_ids: n8nData.matched_ids || [],
-            total_sources: explicitSourceRequest ? validSources.length : 0,
+            total_sources: explicitSourceRequest ? minimalSources.length : 0,
             search_method: 'n8n'
           })
         } else {
@@ -444,7 +536,14 @@ export async function POST(request: NextRequest) {
     if (shouldSearch) {
       // Tìm kiếm trong database local với độ chính xác cao hơn
       // Tách query thành các từ khóa để tìm kiếm chính xác hơn
-      const queryWords = query.toLowerCase().split(/\s+/).filter((word: string) => word.length > 2)
+      const recentUserTexts = previousMessages
+        .filter((m: any) => m.role === 'user')
+        .slice(-10)
+        .map((m: any) => m.content)
+        .join(' ')
+      const searchBase = (recentUserTexts ? (recentUserTexts + ' ') : '') + query
+      const searchBaseLower = searchBase.toLowerCase()
+      const queryWords = searchBaseLower.split(/\s+/).filter((word: string) => word.length > 2)
       
       // Tìm kiếm với độ ưu tiên: title trước, sau đó mới đến content
       let searchQuery = supabase
@@ -461,14 +560,14 @@ export async function POST(request: NextRequest) {
         searchQuery = searchQuery.or(`${titleConditions},${contentConditions}`)
       } else {
         // Nếu query ngắn, tìm kiếm đơn giản
-        searchQuery = searchQuery.or(`title.ilike.%${query}%,content.ilike.%${query}%`)
+        searchQuery = searchQuery.or(`title.ilike.%${searchBase}%,content.ilike.%${searchBase}%`)
       }
       
       const { data: localResults, error: localError } = await searchQuery.limit(10) // Lấy nhiều hơn để filter
 
     if (!localError && localResults && localResults.length > 0) {
       // Filter và rank kết quả theo độ liên quan
-      const queryLower = query.toLowerCase()
+      const queryLower = searchBaseLower
       const rankedResults = localResults
         .map((law: any) => {
           const title = (law.title || '').toLowerCase()
@@ -565,16 +664,16 @@ export async function POST(request: NextRequest) {
     // 4. Tạo response dựa trên context
     let response = ""
     
-    if (context && sources.length > 0) {
+    if (sources.length > 0) {
       // Có kết quả tìm kiếm pháp luật
       if (explicitSourceRequest) {
-        // User yêu cầu trích nguồn rõ ràng - hiển thị sources
-      response = `Dựa trên các văn bản pháp luật liên quan, tôi có thể trả lời câu hỏi của bạn:\n\n${query}\n\nThông tin tham khảo từ các nguồn pháp luật:\n${context}\n\nLưu ý: Đây là thông tin tham khảo, bạn nên tham khảo thêm ý kiến của luật sư hoặc cơ quan có thẩm quyền để có lời khuyên chính xác nhất.`
-    } else {
+        // User yêu cầu trích nguồn: chỉ trả về link tối giản
+        const minimalSources = sources.map((s: any) => ({ id: s.id, link: s.link || s.source || null }))
+        sources = minimalSources as any
+        response = `Dưới đây là các liên kết tham khảo.`
+      } else {
         // User không yêu cầu trích nguồn - chỉ trả lời, không hiển thị sources
-        // Tạo response dựa trên context nhưng không đề cập đến sources
         response = `Dựa trên các quy định pháp luật Việt Nam, tôi có thể trả lời câu hỏi của bạn:\n\n${query}\n\nLưu ý: Đây là thông tin tham khảo, bạn nên tham khảo thêm ý kiến của luật sư hoặc cơ quan có thẩm quyền để có lời khuyên chính xác nhất.`
-        // Xóa sources để không hiển thị "Nguồn tham khảo"
         sources = []
       }
     } else if (shouldSearch && sources.length === 0) {

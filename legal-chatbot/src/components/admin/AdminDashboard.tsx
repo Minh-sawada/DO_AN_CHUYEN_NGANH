@@ -262,12 +262,33 @@ export function AdminDashboard() {
         supabase.from('laws').select('id', { count: 'exact', head: true }).gte('created_at', yearStart.toISOString())
       ])
 
-      // Count unique users từ allQueries (vì count queries không có user_id)
-      const countUniqueUsers = (count: number) => {
-        // Ước tính dựa trên count (vì không có data để count unique)
-        // Có thể fetch riêng nếu cần chính xác
-        return Math.floor(count * 0.7) // Giả định 70% unique users
+      // Count unique users thực tế từ query_logs
+      const countUniqueUsers = async (startDate: Date): Promise<number> => {
+        try {
+          const { data, error } = await supabase
+            .from('query_logs')
+            .select('user_id')
+            .gte('created_at', startDate.toISOString())
+            .not('user_id', 'is', null)
+            .limit(10000) // Limit để tránh quá nhiều data
+          
+          if (error || !data) return 0
+          
+          const uniqueUserIds = new Set(data.map(q => q.user_id).filter(Boolean))
+          return uniqueUserIds.size
+        } catch (error) {
+          console.error('Error counting unique users:', error)
+          return 0
+        }
       }
+
+      // Fetch unique users cho từng khoảng thời gian
+      const [todayUsers, weekUsers, monthUsers, yearUsers] = await Promise.all([
+        countUniqueUsers(todayStart),
+        countUniqueUsers(weekStart),
+        countUniqueUsers(monthStart),
+        countUniqueUsers(yearStart)
+      ])
 
       // Process hourly data (CHỈ của HÔM NAY)
       const hourlyData: { [key: number]: number } = {}
@@ -332,22 +353,22 @@ export function AdminDashboard() {
         today: {
           queries: todayQueries.count || 0,
           laws: todayLaws.count || 0,
-          users: countUniqueUsers(todayQueries.count || 0)
+          users: todayUsers
         },
         thisWeek: {
           queries: weekQueries.count || 0,
           laws: weekLaws.count || 0,
-          users: countUniqueUsers(weekQueries.count || 0)
+          users: weekUsers
         },
         thisMonth: {
           queries: monthQueries.count || 0,
           laws: monthLaws.count || 0,
-          users: countUniqueUsers(monthQueries.count || 0)
+          users: monthUsers
         },
         thisYear: {
           queries: yearQueries.count || 0,
           laws: yearLaws.count || 0,
-          users: countUniqueUsers(yearQueries.count || 0)
+          users: yearUsers
         },
         hourly,
         daily,
@@ -600,55 +621,55 @@ export function AdminDashboard() {
       {/* Time-based Statistics */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2 mb-2">
             <BarChart3 className="h-5 w-5 text-purple-600" />
-            <span>Thống kê theo thời gian</span>
-          </CardTitle>
+            <CardTitle>Thống kê theo thời gian</CardTitle>
+          </div>
           <CardDescription>
             Xem số liệu theo từng khoảng thời gian
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as any)} className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-4 mb-6">
               <TabsTrigger value="today">Hôm nay</TabsTrigger>
               <TabsTrigger value="week">Tuần này</TabsTrigger>
               <TabsTrigger value="month">Tháng này</TabsTrigger>
               <TabsTrigger value="year">Năm nay</TabsTrigger>
             </TabsList>
 
-            <TabsContent value="today" className="space-y-4 mt-4">
+            <TabsContent value="today" className="space-y-6 mt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-blue-600">Truy vấn</p>
-                        <p className="text-2xl font-bold text-blue-700">{timeStats.today.queries}</p>
+                        <p className="text-sm font-medium text-blue-600 mb-1">Truy vấn</p>
+                        <p className="text-3xl font-bold text-blue-700">{timeStats.today.queries}</p>
                       </div>
-                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                      <MessageSquare className="h-10 w-10 text-blue-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-green-50 border-green-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-green-600">Văn bản mới</p>
-                        <p className="text-2xl font-bold text-green-700">{timeStats.today.laws}</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-3xl font-bold text-green-700">{timeStats.today.laws}</p>
                       </div>
-                      <FileText className="h-8 w-8 text-green-400" />
+                      <FileText className="h-10 w-10 text-green-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-purple-50 border-purple-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-purple-600">Người dùng</p>
-                        <p className="text-2xl font-bold text-purple-700">{timeStats.today.users}</p>
+                        <p className="text-sm font-medium text-purple-600 mb-1">Người dùng</p>
+                        <p className="text-3xl font-bold text-purple-700">{timeStats.today.users}</p>
                       </div>
-                      <Users className="h-8 w-8 text-purple-400" />
+                      <Users className="h-10 w-10 text-purple-400" />
                     </div>
                   </CardContent>
                 </Card>
@@ -657,28 +678,34 @@ export function AdminDashboard() {
               {/* Hourly Chart */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-sm">Theo giờ (24h qua)</CardTitle>
+                  <CardTitle className="text-base font-semibold">Theo giờ (24h qua)</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {timeStats.hourly.map((item) => {
                       const maxCount = Math.max(...timeStats.hourly.map(h => h.count), 1)
                       const percentage = maxCount > 0 ? (item.count / maxCount) * 100 : 0
                       return (
-                        <div key={item.hour} className="flex items-center space-x-3">
-                          <span className="text-xs text-gray-600 w-12">{item.hour}:00</span>
+                        <div key={item.hour} className="flex items-center gap-4">
+                          <span className="text-sm text-gray-600 w-16 font-medium">
+                            {String(item.hour).padStart(2, '0')}:00
+                          </span>
                           <div className="flex-1">
-                            <div className="h-6 bg-gray-200 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-blue-400 to-blue-600 transition-all"
-                                style={{ width: `${percentage}%` }}
-                              >
-                                {item.count > 0 && (
-                                  <span className="flex items-center justify-end h-full px-2 text-xs text-white font-medium">
-                                    {item.count}
-                                  </span>
-                                )}
-                              </div>
+                            <div className="h-8 bg-gray-100 rounded-full overflow-hidden relative">
+                              {percentage > 0 ? (
+                                <div 
+                                  className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full transition-all duration-300 flex items-center justify-end pr-3"
+                                  style={{ width: `${percentage}%` }}
+                                >
+                                  {item.count > 0 && (
+                                    <span className="text-xs text-white font-medium">
+                                      {item.count}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="h-full w-full bg-gray-100 rounded-full" />
+                              )}
                             </div>
                           </div>
                         </div>
@@ -689,76 +716,76 @@ export function AdminDashboard() {
               </Card>
             </TabsContent>
 
-            <TabsContent value="week" className="space-y-4 mt-4">
+            <TabsContent value="week" className="space-y-6 mt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-blue-600">Truy vấn</p>
-                        <p className="text-2xl font-bold text-blue-700">{timeStats.thisWeek.queries}</p>
+                        <p className="text-sm font-medium text-blue-600 mb-1">Truy vấn</p>
+                        <p className="text-3xl font-bold text-blue-700">{timeStats.thisWeek.queries}</p>
                       </div>
-                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                      <MessageSquare className="h-10 w-10 text-blue-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-green-50 border-green-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-green-600">Văn bản mới</p>
-                        <p className="text-2xl font-bold text-green-700">{timeStats.thisWeek.laws}</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-3xl font-bold text-green-700">{timeStats.thisWeek.laws}</p>
                       </div>
-                      <FileText className="h-8 w-8 text-green-400" />
+                      <FileText className="h-10 w-10 text-green-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-purple-50 border-purple-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-purple-600">Người dùng</p>
-                        <p className="text-2xl font-bold text-purple-700">{timeStats.thisWeek.users}</p>
+                        <p className="text-sm font-medium text-purple-600 mb-1">Người dùng</p>
+                        <p className="text-3xl font-bold text-purple-700">{timeStats.thisWeek.users}</p>
                       </div>
-                      <Users className="h-8 w-8 text-purple-400" />
+                      <Users className="h-10 w-10 text-purple-400" />
                     </div>
                   </CardContent>
                 </Card>
               </div>
             </TabsContent>
 
-            <TabsContent value="month" className="space-y-4 mt-4">
+            <TabsContent value="month" className="space-y-6 mt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-blue-600">Truy vấn</p>
-                        <p className="text-2xl font-bold text-blue-700">{timeStats.thisMonth.queries}</p>
+                        <p className="text-sm font-medium text-blue-600 mb-1">Truy vấn</p>
+                        <p className="text-3xl font-bold text-blue-700">{timeStats.thisMonth.queries}</p>
                       </div>
-                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                      <MessageSquare className="h-10 w-10 text-blue-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-green-50 border-green-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-green-600">Văn bản mới</p>
-                        <p className="text-2xl font-bold text-green-700">{timeStats.thisMonth.laws}</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-3xl font-bold text-green-700">{timeStats.thisMonth.laws}</p>
                       </div>
-                      <FileText className="h-8 w-8 text-green-400" />
+                      <FileText className="h-10 w-10 text-green-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-purple-50 border-purple-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-purple-600">Người dùng</p>
-                        <p className="text-2xl font-bold text-purple-700">{timeStats.thisMonth.users}</p>
+                        <p className="text-sm font-medium text-purple-600 mb-1">Người dùng</p>
+                        <p className="text-3xl font-bold text-purple-700">{timeStats.thisMonth.users}</p>
                       </div>
-                      <Users className="h-8 w-8 text-purple-400" />
+                      <Users className="h-10 w-10 text-purple-400" />
                     </div>
                   </CardContent>
                 </Card>
@@ -804,38 +831,38 @@ export function AdminDashboard() {
               )}
             </TabsContent>
 
-            <TabsContent value="year" className="space-y-4 mt-4">
+            <TabsContent value="year" className="space-y-6 mt-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <Card className="bg-blue-50 border-blue-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-blue-600">Truy vấn</p>
-                        <p className="text-2xl font-bold text-blue-700">{timeStats.thisYear.queries}</p>
+                        <p className="text-sm font-medium text-blue-600 mb-1">Truy vấn</p>
+                        <p className="text-3xl font-bold text-blue-700">{timeStats.thisYear.queries}</p>
                       </div>
-                      <MessageSquare className="h-8 w-8 text-blue-400" />
+                      <MessageSquare className="h-10 w-10 text-blue-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-green-50 border-green-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-green-600">Văn bản mới</p>
-                        <p className="text-2xl font-bold text-green-700">{timeStats.thisYear.laws}</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-3xl font-bold text-green-700">{timeStats.thisYear.laws}</p>
                       </div>
-                      <FileText className="h-8 w-8 text-green-400" />
+                      <FileText className="h-10 w-10 text-green-400" />
                     </div>
                   </CardContent>
                 </Card>
                 <Card className="bg-purple-50 border-purple-200">
-                  <CardContent className="p-4">
+                  <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm text-purple-600">Người dùng</p>
-                        <p className="text-2xl font-bold text-purple-700">{timeStats.thisYear.users}</p>
+                        <p className="text-sm font-medium text-purple-600 mb-1">Người dùng</p>
+                        <p className="text-3xl font-bold text-purple-700">{timeStats.thisYear.users}</p>
                       </div>
-                      <Users className="h-8 w-8 text-purple-400" />
+                      <Users className="h-10 w-10 text-purple-400" />
                     </div>
                   </CardContent>
                 </Card>

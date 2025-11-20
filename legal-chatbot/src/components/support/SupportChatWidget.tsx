@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -34,6 +35,8 @@ interface SupportConversation {
 export function SupportChatWidget() {
   const { user, profile } = useAuth()
   const { toast } = useToast()
+  const pathname = usePathname()
+  const hidden = !user || (pathname && pathname.startsWith('/login'))
   const [isOpen, setIsOpen] = useState(false)
   const [conversation, setConversation] = useState<SupportConversation | null>(null)
   const [messages, setMessages] = useState<SupportMessage[]>([])
@@ -41,26 +44,69 @@ export function SupportChatWidget() {
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [wsConnected, setWsConnected] = useState(false)
+  const pollRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Load conversation khi mở chat
+  // Auto-load/create conversation ngay khi trang mở (kể cả khi widget đóng)
   useEffect(() => {
+    if (hidden) return
+    if (!conversation) {
+      loadOrCreateConversation()
+    }
+  }, [hidden])
+
+  // Khi người dùng mở widget, vẫn đảm bảo đã có conversation
+  useEffect(() => {
+    if (hidden) return
     if (isOpen && !conversation) {
       loadOrCreateConversation()
     }
-  }, [isOpen])
+  }, [isOpen, conversation, hidden])
 
   // Load messages khi có conversation
   useEffect(() => {
+    if (hidden) return
     if (conversation) {
+      console.log('[Widget] conversation selected', conversation.id)
       loadMessages()
-      subscribeToMessages()
+      const cleanup = subscribeToMessages()
+      return () => {
+        if (typeof cleanup === 'function') cleanup()
+      }
     }
-  }, [conversation?.id])
+  }, [conversation?.id, hidden])
+
+  // Polling fallback when WS not connected
+  useEffect(() => {
+    if (hidden || !conversation) return
+    if (!wsConnected) {
+      if (pollRef.current) clearInterval(pollRef.current)
+      pollRef.current = setInterval(() => {
+        loadMessages()
+      }, 5000)
+    } else if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+  }, [wsConnected, conversation?.id])
 
   // Scroll to bottom khi có tin nhắn mới
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const uniqueMessages = useMemo(() => {
+    return Array.from(new Map(messages.map(m => [m.id, m])).values())
+  }, [messages])
+
+  // Render nothing when hidden
+  if (hidden) return null
 
   const loadOrCreateConversation = async () => {
     try {
@@ -107,7 +153,9 @@ export function SupportChatWidget() {
       const response = await fetch(`/api/support/messages?conversationId=${conversation.id}`)
       const data = await response.json()
       if (data.data) {
-        setMessages(data.data)
+        // Ensure no duplicates from server responses
+        const uniq = Array.from(new Map((data.data as SupportMessage[]).map(m => [m.id, m])).values())
+        setMessages(uniq)
       }
     } catch (error) {
       console.error('Error loading messages:', error)
@@ -117,6 +165,7 @@ export function SupportChatWidget() {
   const subscribeToMessages = () => {
     if (!conversation) return
 
+    console.log('[Widget] subscribeToMessages ->', conversation.id)
     const channel = supabase
       .channel(`support_messages:${conversation.id}`)
       .on(
@@ -129,7 +178,17 @@ export function SupportChatWidget() {
         },
         (payload) => {
           const newMessage = payload.new as SupportMessage
-          setMessages(prev => [...prev, newMessage])
+          console.log('[Widget WS INSERT]', {
+            conversationId: conversation.id,
+            messageId: (newMessage as any)?.id,
+            sender_type: (newMessage as any)?.sender_type,
+            created_at: (newMessage as any)?.created_at,
+          })
+          // Dedupe by ID to avoid duplicates when polling and WS overlap
+          setMessages(prev => {
+            if (prev.some(m => m.id === (newMessage as any).id)) return prev
+            return [...prev, newMessage]
+          })
           
           // Đánh dấu đã đọc nếu là tin nhắn từ admin
           if (newMessage.sender_type === 'admin') {
@@ -141,10 +200,15 @@ export function SupportChatWidget() {
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[Widget WS status]', status, `support_messages:${conversation.id}`)
+        setWsConnected(status === 'SUBSCRIBED')
+      })
 
     return () => {
       supabase.removeChannel(channel)
+      console.log('[Widget WS unsubscribe]', `support_messages:${conversation.id}`)
+      setWsConnected(false)
     }
   }
 
@@ -173,6 +237,19 @@ export function SupportChatWidget() {
       if (!data.success) {
         throw new Error(data.error || 'Không thể gửi tin nhắn')
       }
+      // Append ngay tin nhắn vừa gửi để hiển thị tức thì (Realtime có thể đến trễ)
+      if (data.data) {
+        setMessages(prev => {
+          const msg = data.data as SupportMessage
+          if (prev.some(m => m.id === (msg as any).id)) return prev
+          return [...prev, msg]
+        })
+      }
+      
+      // Scroll to bottom sau khi gửi
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 0)
     } catch (error: any) {
       console.error('Error sending message:', error)
       toast({
@@ -232,6 +309,9 @@ export function SupportChatWidget() {
                 {conversation.status === 'open' ? 'Đang mở' : conversation.status}
               </Badge>
             )}
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full border ${wsConnected ? 'text-green-700 border-green-300 bg-green-50' : 'text-yellow-800 border-yellow-300 bg-yellow-50'}`}>
+              Realtime: {wsConnected ? 'Connected' : 'Retrying'}
+            </span>
           </CardHeader>
 
           <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
@@ -250,7 +330,7 @@ export function SupportChatWidget() {
                       <p className="text-sm mt-1">Gửi tin nhắn để bắt đầu...</p>
                     </div>
                   ) : (
-                    messages.map((message) => {
+                    uniqueMessages.map((message) => {
                       const isUser = message.sender_type === 'user'
                       const senderName = message.sender?.full_name || message.sender_name || 
                         (isUser ? (profile?.full_name || user?.email?.split('@')[0] || 'Bạn') : 'Hỗ trợ viên')

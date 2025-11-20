@@ -16,12 +16,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const { data, error, count } = await supabaseAdmin
+    const { data, error, count } = await (supabaseAdmin as any)
       .from('support_messages')
-      .select(`
-        *,
-        sender:profiles!support_messages_sender_id(full_name, email, avatar_url)
-      `)
+      .select(`*`)
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true })
       .range(offset, offset + limit - 1)
@@ -29,7 +26,7 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('Error fetching messages:', error)
       return NextResponse.json(
-        { error: 'Có lỗi xảy ra khi lấy tin nhắn' },
+        { error: 'Có lỗi xảy ra khi lấy tin nhắn', details: (error as any)?.message || String(error) },
         { status: 500 }
       )
     }
@@ -63,7 +60,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Kiểm tra conversation có tồn tại không
-    const { data: conversation, error: convError } = await supabaseAdmin
+    const { data: conversation, error: convError } = await (supabaseAdmin as any)
       .from('support_conversations')
       .select('id, status')
       .eq('id', conversationId)
@@ -71,7 +68,7 @@ export async function POST(request: NextRequest) {
 
     if (convError || !conversation) {
       return NextResponse.json(
-        { error: 'Cuộc trò chuyện không tồn tại' },
+        { error: 'Cuộc trò chuyện không tồn tại', details: (convError as any)?.message || String(convError) },
         { status: 404 }
       )
     }
@@ -85,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Tạo tin nhắn mới
-    const { data: message, error: msgError } = await supabaseAdmin
+    const { data: message, error: msgError } = await (supabaseAdmin as any)
       .from('support_messages')
       .insert({
         conversation_id: conversationId,
@@ -93,25 +90,22 @@ export async function POST(request: NextRequest) {
         sender_type: senderType,
         sender_name: senderName || null,
         content: content.trim(),
-        is_read: senderType === 'user' // Tin nhắn từ user chưa đọc, từ admin thì đã đọc
-      })
-      .select(`
-        *,
-        sender:profiles!support_messages_sender_id(full_name, email, avatar_url)
-      `)
+        is_read: senderType === 'admin' // Tin nhắn từ user: chưa đọc; từ admin: mặc định đã đọc
+      } as any)
+      .select(`*`)
       .single()
 
     if (msgError) {
       console.error('Error creating message:', msgError)
       return NextResponse.json(
-        { error: 'Có lỗi xảy ra khi gửi tin nhắn' },
+        { error: 'Có lỗi xảy ra khi gửi tin nhắn', details: (msgError as any)?.message || String(msgError) },
         { status: 500 }
       )
     }
 
     // Nếu conversation đang closed và admin gửi tin nhắn, mở lại
     if (conversation.status === 'closed' && senderType === 'admin') {
-      await supabaseAdmin
+      await (supabaseAdmin as any)
         .from('support_conversations')
         .update({ status: 'open' })
         .eq('id', conversationId)
@@ -124,7 +118,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error in messages POST API:', error)
     return NextResponse.json(
-      { error: 'Có lỗi xảy ra. Vui lòng thử lại sau.' },
+      { error: 'Có lỗi xảy ra. Vui lòng thử lại sau.', details: (error as any)?.message || String(error) },
       { status: 500 }
     )
   }

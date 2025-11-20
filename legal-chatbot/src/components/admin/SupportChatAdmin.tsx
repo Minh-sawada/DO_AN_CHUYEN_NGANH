@@ -66,24 +66,99 @@ export function SupportChatAdmin() {
   const [conversations, setConversations] = useState<SupportConversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<SupportConversation | null>(null)
   const [messages, setMessages] = useState<SupportMessage[]>([])
+  const [messageLimit, setMessageLimit] = useState(50)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(5)
+  const [totalCount, setTotalCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [wsConnected, setWsConnected] = useState(false)
+  const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const selectedIdRef = useRef<string | null>(null)
+
+  // Global subscription: update list when ANY conversation receives a new message
+  useEffect(() => {
+    const channel = supabase
+      .channel('support_messages:global')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'support_messages' },
+        (payload) => {
+          const msg = payload.new as any
+          setConversations(prev => {
+            let changed = false
+            const mapped = prev.map((c) => {
+              if (c.id !== msg.conversation_id) return c
+              changed = true
+              const conv: any = { ...c }
+              conv.last_message = {
+                content: msg.content,
+                created_at: msg.created_at,
+                sender_type: msg.sender_type,
+                sender_name: msg.sender_name || null
+              }
+              conv.last_message_at = msg.created_at
+              const isActive = selectedConversation?.id === conv.id
+              const fromUser = msg.sender_type === 'user'
+              conv.unread_count = isActive ? 0 : Math.max(0, (conv.unread_count || 0) + (fromUser ? 1 : 0))
+              return conv
+            })
+            if (!changed) return prev
+            // Stable sort by last_message_at desc
+            return [...mapped].sort((a: any, b: any) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime())
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [selectedConversation?.id])
 
   useEffect(() => {
     loadConversations()
-  }, [statusFilter])
+  }, [statusFilter, page, limit])
 
   useEffect(() => {
     if (selectedConversation) {
+      selectedIdRef.current = selectedConversation.id
+      setMessages([])
+      console.log('[Admin] selectedConversation', selectedConversation.id)
       loadMessages()
-      subscribeToMessages()
+      const cleanup = subscribeToMessages()
       markAsRead()
+      return () => {
+        if (typeof cleanup === 'function') cleanup()
+      }
+    } else {
+      selectedIdRef.current = null
+      setMessages([])
     }
   }, [selectedConversation?.id])
+
+  useEffect(() => {
+    if (!selectedConversation) return
+    if (!wsConnected) {
+      if (pollRef.current) clearInterval(pollRef.current)
+      pollRef.current = setInterval(() => {
+        loadMessages()
+      }, 5000)
+    } else if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+  }, [wsConnected, selectedConversation?.id])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -92,13 +167,20 @@ export function SupportChatAdmin() {
   const loadConversations = async () => {
     try {
       setIsLoading(true)
-      const url = statusFilter === 'all' 
-        ? '/api/support/conversations'
-        : `/api/support/conversations?status=${statusFilter}`
+      const params = new URLSearchParams()
+      if (statusFilter !== 'all') params.set('status', statusFilter)
+      params.set('limit', String(limit))
+      params.set('offset', String((page - 1) * limit))
+      const url = `/api/support/conversations${params.toString() ? `?${params.toString()}` : ''}`
       const response = await fetch(url)
       const data = await response.json()
       if (data.data) {
         setConversations(data.data)
+        setTotalCount(data.count || 0)
+        // Auto-select the first conversation ONLY if none is selected
+        if (!selectedConversation && data.data.length > 0) {
+          setSelectedConversation(data.data[0])
+        }
       }
     } catch (error) {
       console.error('Error loading conversations:', error)
@@ -113,11 +195,14 @@ export function SupportChatAdmin() {
   }
 
   const loadMessages = async () => {
-    if (!selectedConversation) return
+    const convId = selectedIdRef.current
+    if (!convId) return
 
     try {
-      const response = await fetch(`/api/support/messages?conversationId=${selectedConversation.id}`)
+      console.log('[Admin] loadMessages for', convId)
+      const response = await fetch(`/api/support/messages?conversationId=${convId}`)
       const data = await response.json()
+      if (selectedIdRef.current !== convId) return
       if (data.data) {
         setMessages(data.data)
       }
@@ -127,41 +212,80 @@ export function SupportChatAdmin() {
   }
 
   const subscribeToMessages = () => {
-    if (!selectedConversation) return
+    const convId = selectedIdRef.current
+    if (!convId) return
 
+    console.log('[Admin] subscribeToMessages ->', convId)
     const channel = supabase
-      .channel(`support_messages:${selectedConversation.id}`)
+      .channel(`support_messages:${convId}`)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'support_messages',
-          filter: `conversation_id=eq.${selectedConversation.id}`
+          filter: `conversation_id=eq.${convId}`
         },
         (payload) => {
           const newMessage = payload.new as SupportMessage
-          setMessages(prev => [...prev, newMessage])
-          if (newMessage.sender_type === 'user') {
-            markAsRead()
+          if (selectedIdRef.current !== convId) return
+          console.log('[Admin WS INSERT]', {
+            conversationId: convId,
+            messageId: (newMessage as any)?.id,
+            created_at: (newMessage as any)?.created_at,
+            sender_type: (newMessage as any)?.sender_type,
+          })
+          // Dedupe by ID to avoid double messages when polling/fetch and WS overlap
+          setMessages(prev => {
+            if (prev.some(m => m.id === (newMessage as any).id)) return prev
+            return [...prev, newMessage]
+          })
+          // Cập nhật preview và unread cho list bên trái mà không reload toàn bộ
+          setConversations(prev => prev.map(conv => {
+            if (conv.id !== convId) return conv
+            const updated: any = { ...conv }
+            updated.last_message = {
+              content: newMessage.content,
+              created_at: newMessage.created_at,
+              sender_type: newMessage.sender_type,
+              sender_name: newMessage.sender_name || null
+            }
+            // Đang mở cuộc trò chuyện này => set unread = 0
+            updated.unread_count = 0
+            return updated
+          }))
+
+          // Đánh dấu đã đọc nếu là tin nhắn từ admin
+          if (newMessage.sender_type === 'admin') {
+            fetch(`/api/support/messages/${newMessage.id}/read`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ conversationId: convId })
+            })
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[Admin WS status]', status, `support_messages:${convId}`)
+        setWsConnected(status === 'SUBSCRIBED')
+      })
 
     return () => {
       supabase.removeChannel(channel)
+      console.log('[Admin WS unsubscribe]', `support_messages:${convId}`)
+      setWsConnected(false)
     }
   }
 
   const markAsRead = async () => {
-    if (!selectedConversation) return
+    const convId = selectedIdRef.current
+    if (!convId) return
 
     try {
-      await fetch(`/api/support/messages/${selectedConversation.id}/read`, {
+      await fetch(`/api/support/messages/${convId}/read`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversationId: selectedConversation.id })
+        body: JSON.stringify({ conversationId: convId })
       })
       // Reload conversations để cập nhật unread count
       loadConversations()
@@ -208,6 +332,18 @@ export function SupportChatAdmin() {
     }
   }
 
+  const handleDeleteMessage = async (messageId: string) => {
+    if (!confirm('Xóa tin nhắn này?')) return
+    try {
+      const res = await fetch(`/api/support/messages/${messageId}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!data.success) throw new Error(data.error || 'Không thể xóa tin nhắn')
+      setMessages((prev: SupportMessage[]) => prev.filter((m) => m.id !== messageId))
+    } catch (err: any) {
+      toast({ title: 'Lỗi', description: err.message || 'Không thể xóa', variant: 'destructive' })
+    }
+  }
+
   const updateConversation = async (field: string, value: any) => {
     if (!selectedConversation) return
 
@@ -251,14 +387,30 @@ export function SupportChatAdmin() {
     )
   })
 
+  const totalPages = Math.max(1, Math.ceil(totalCount / limit))
+  const canPrev = page > 1
+  const canNext = page < totalPages
+
+  const truncate = (s?: string | null, n: number = 80) => {
+    if (!s) return ''
+    return s.length > n ? s.slice(0, n - 1) + '…' : s
+  }
+
+  const visibleMessages = messages.length > messageLimit
+    ? messages.slice(messages.length - messageLimit)
+    : messages
+
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[800px]">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[calc(100vh-140px)] min-h-0 overflow-hidden">
       {/* Conversations List */}
-      <Card className="lg:col-span-1 flex flex-col">
+      <Card className="lg:col-span-1 flex flex-col h-full min-h-0 overflow-hidden">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <MessageCircle className="h-5 w-5" />
             Cuộc Trò Chuyện
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full border ${wsConnected ? 'text-green-700 border-green-300 bg-green-50' : 'text-yellow-800 border-yellow-300 bg-yellow-50'}`}>
+              Realtime: {wsConnected ? 'Connected' : 'Retrying'}
+            </span>
           </CardTitle>
           <div className="flex gap-2 mt-4">
             <Input
@@ -280,9 +432,21 @@ export function SupportChatAdmin() {
               </SelectContent>
             </Select>
           </div>
+          {/* Pagination controls (moved to top) */}
+          <div className="mt-2 flex items-center justify-between">
+            <div className="text-xs text-gray-500">{`Trang ${page}/${totalPages}`} · {totalCount} cuộc trò chuyện</div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={!canPrev} onClick={() => canPrev && setPage(page - 1)}>
+                Trước
+              </Button>
+              <Button variant="outline" size="sm" disabled={!canNext} onClick={() => canNext && setPage(page + 1)}>
+                Sau
+              </Button>
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="flex-1 overflow-hidden p-0">
-          <ScrollArea className="h-full">
+        <CardContent className="flex-1 overflow-hidden p-0 min-h-0">
+          <div className="h-full overflow-y-auto">
             {isLoading ? (
               <div className="flex items-center justify-center h-32">
                 <Loader2 className="h-6 w-6 animate-spin" />
@@ -310,6 +474,17 @@ export function SupportChatAdmin() {
                         <p className="text-xs text-gray-500">
                           {conv.profiles?.email || conv.user_email || 'Chưa đăng nhập'}
                         </p>
+                        {(conv as any).last_message && (
+                          <p className="text-xs text-gray-600 mt-1 line-clamp-1">
+                            {(() => {
+                              const lm: any = (conv as any).last_message || {}
+                              const senderLabel = lm.sender_type === 'admin'
+                                ? 'Bạn'
+                                : (conv.profiles?.full_name || conv.user_name || 'Người dùng')
+                              return truncate(`${senderLabel}: ${lm.content || ''}`, 80)
+                            })()}
+                          </p>
+                        )}
                       </div>
                       {conv.unread_count && conv.unread_count > 0 && (
                         <Badge variant="destructive" className="ml-2">
@@ -330,12 +505,13 @@ export function SupportChatAdmin() {
                 ))}
               </div>
             )}
-          </ScrollArea>
+          </div>
+          {/* Pagination controls moved to header */}
         </CardContent>
       </Card>
 
       {/* Chat Area */}
-      <Card className="lg:col-span-2 flex flex-col">
+      <Card className="lg:col-span-2 flex flex-col h-full min-h-0 overflow-hidden">
         {selectedConversation ? (
           <>
             <CardHeader className="border-b">
@@ -381,14 +557,23 @@ export function SupportChatAdmin() {
               </div>
             </CardHeader>
 
-            <CardContent className="flex-1 flex flex-col p-0 overflow-hidden">
+            <CardContent className="flex-1 flex flex-col p-0 overflow-hidden min-h-0">
               {/* Messages */}
-              <ScrollArea className="flex-1 p-4">
+              <div className="flex-1 p-4 overflow-y-auto max-h-full min-h-0">
                 <div className="space-y-4">
-                  {messages.map((message) => {
+                  {/* Load more older button if many messages */}
+                  {messages.length > messageLimit && (
+                    <div className="flex justify-center">
+                      <Button variant="outline" size="sm" onClick={() => setMessageLimit((v) => v + 50)}>
+                        Tải thêm
+                      </Button>
+                    </div>
+                  )}
+                  {visibleMessages.map((message) => {
                     const isAdmin = message.sender_type === 'admin'
-                    const senderName = message.sender?.full_name || message.sender_name || 
-                      (isAdmin ? 'Bạn' : (selectedConversation.profiles?.full_name || selectedConversation.user_name || 'Người dùng'))
+                    const senderName = isAdmin
+                      ? 'Bạn'
+                      : (message.sender?.full_name || message.sender_name || (selectedConversation.profiles?.full_name || selectedConversation.user_name || 'Người dùng'))
 
                     return (
                       <div
@@ -416,14 +601,23 @@ export function SupportChatAdmin() {
                               {formatTime(message.created_at)}
                             </p>
                           </div>
+                          {/* Delete button for admin */}
+                          <div className={`mt-1 ${isAdmin ? 'text-right' : 'text-left'}`}>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMessage(message.id)}
+                              className="text-xs text-red-500 hover:underline"
+                            >
+                              Xóa
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )
                   })}
                   <div ref={messagesEndRef} />
                 </div>
-              </ScrollArea>
-
+              </div>
               {/* Input */}
               <form onSubmit={handleSend} className="border-t p-4">
                 <div className="flex gap-2">

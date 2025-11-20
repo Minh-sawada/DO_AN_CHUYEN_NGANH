@@ -4,16 +4,16 @@ import { supabaseAdmin } from '@/lib/supabase'
 // PATCH: Đánh dấu tin nhắn đã đọc
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params
+    const { id } = await params
     const body = await request.json()
     const { conversationId } = body
 
     // Đánh dấu tất cả tin nhắn trong conversation là đã đọc
     if (conversationId) {
-      const { error } = await supabaseAdmin
+      const { error } = await (supabaseAdmin as any)
         .from('support_messages')
         .update({
           is_read: true,
@@ -37,7 +37,7 @@ export async function PATCH(
     }
 
     // Đánh dấu một tin nhắn cụ thể
-    const { error } = await supabaseAdmin
+    const { error } = await (supabaseAdmin as any)
       .from('support_messages')
       .update({
         is_read: true,

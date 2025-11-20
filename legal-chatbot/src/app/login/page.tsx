@@ -34,23 +34,27 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50">
       <Header />
-      <main className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-md">
-          <Card className="shadow-xl border-0">
+      <main className="relative flex-1 flex items-center justify-center px-4 py-12 overflow-hidden">
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-gradient-to-br from-blue-200 to-purple-200 opacity-50 blur-3xl" />
+          <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-gradient-to-tr from-purple-200 to-pink-200 opacity-40 blur-3xl" />
+        </div>
+        <div className="w-full max-w-md relative">
+          <Card className="shadow-2xl border-0 ring-1 ring-black/5 backdrop-blur-sm bg-white/90">
             <CardHeader className="text-center space-y-4 pb-6">
               <div className="flex justify-center">
-                <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
+                <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center shadow-lg">
                   <Scale className="h-8 w-8 text-white" />
                 </div>
               </div>
               <CardTitle className="text-2xl font-bold text-gray-900">
                 Đăng nhập
               </CardTitle>
-              <CardDescription className="text-base">
+              <CardDescription className="text-base text-gray-600">
                 Đăng nhập để sử dụng Legal Chatbot
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="pt-0">
               <LoginForm 
                 onSuccess={() => {
                   // Redirect về trang chủ hoặc URL đã lưu sau khi đăng nhập thành công
