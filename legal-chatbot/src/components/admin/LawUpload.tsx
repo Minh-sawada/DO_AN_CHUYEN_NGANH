@@ -85,7 +85,7 @@ export function LawUpload() {
       const isJsonUpload = result.stats !== undefined
       const toastMessage = isJsonUpload 
         ? `Đã import ${result.stats?.inserted || 0} văn bản thành công`
-        : `Đã upload "${result.data?.title || 'file'}" thành công`
+        : `Đã upload "${result.data?.title || result.data?.so_hieu || 'file'}" thành công`
       
       toast({
         title: 'Thành công',
@@ -382,7 +382,7 @@ export function LawUpload() {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <span className="text-gray-600">Tiêu đề:</span>
-                          <p className="font-medium">{uploadResult.data.title || 'N/A'}</p>
+                          <p className="font-medium">{uploadResult.data.title || uploadResult.data.so_hieu || 'N/A'}</p>
                         </div>
                         <div>
                           <span className="text-gray-600">ID:</span>

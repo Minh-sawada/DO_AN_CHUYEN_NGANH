@@ -29,6 +29,9 @@ export interface SystemLog {
   error?: any;
 }
 
+// ⚠️ DEPRECATED: Function này không còn được dùng
+// Chỉ dùng 2 bảng: query_logs và user_activities
+// Nếu cần log system events, dùng user_activities với activity_type phù hợp
 export async function logSystemEvent({
   user_id,
   level,
@@ -37,40 +40,17 @@ export async function logSystemEvent({
   details,
   error
 }: SystemLog) {
-  try {
-    // ensure the payload matches your generated DB types when available, fall back to `any` to avoid the "never" error
-    type SystemLogsInsert = Database['public']['Tables']['system_logs']['Insert'];
-
-    const payload = {
-        user_id,
-        level,
-        category,
-        action,
-        details,
-        error: error ? JSON.stringify(error) : null,
-        created_at: new Date().toISOString()
-    } as unknown as SystemLogsInsert;
-
-    // cast to `any` for the insert call to avoid the "never" type issue if your DB type is not set up exactly
-    const { data, error: dbError } = await supabase
-        .from('system_logs')
-        .insert([payload] as any);
-
-    if (dbError) throw dbError;
-    return data;
-  } catch (err) {
-    console.error('Failed to log system event:', err);
-    // Don't throw - logging should not break the main flow
-  }
+  // Không dùng nữa - chỉ dùng user_activities
+  console.warn('logSystemEvent is deprecated. Use user_activities instead.')
+  
+  // Nếu muốn log, dùng user_activities thay vì system_logs
+  // await supabase.rpc('log_user_activity', {
+  //   p_user_id: user_id,
+  //   p_activity_type: 'admin_action', // hoặc activity type phù hợp
+  //   p_action: action,
+  //   p_details: details,
+  //   p_risk_level: level === 'error' ? 'high' : 'low'
+  // })
+  
+  return null
 }
-
-// Usage example:
-/*
-await logSystemEvent({
-  user_id: 'user123',
-  level: LogLevel.INFO,
-  category: LogCategory.FILE_UPLOAD,
-  action: 'upload_document',
-  details: { fileName: 'example.pdf', size: 1024 }
-});
-*/

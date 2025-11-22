@@ -29,15 +29,97 @@ export function ResetPasswordForm() {
       try {
         await new Promise(resolve => setTimeout(resolve, 100))
         
-        // Kiểm tra query params trước (code từ Supabase redirect)
+        // Kiểm tra error parameters trước (từ Supabase redirect với lỗi)
         const urlParams = new URLSearchParams(window.location.search)
+        const error = urlParams.get('error')
+        const errorCode = urlParams.get('error_code')
+        const errorDescription = urlParams.get('error_description')
+        
+        // Xử lý error trong query params
+        if (error || errorCode || errorDescription) {
+          console.log('Error detected in reset password form:', { error, errorCode, errorDescription })
+          
+          let errorMessage = 'Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.'
+          
+          if (errorCode === 'otp_expired' || errorDescription?.includes('expired')) {
+            errorMessage = 'Link đặt lại mật khẩu đã hết hạn. Link chỉ có hiệu lực trong 1 giờ. Vui lòng yêu cầu email mới.'
+          } else if (errorCode === 'access_denied' || errorDescription?.includes('invalid')) {
+            errorMessage = 'Link đặt lại mật khẩu không hợp lệ. Vui lòng yêu cầu email mới.'
+          } else if (errorDescription) {
+            errorMessage = `Lỗi: ${decodeURIComponent(errorDescription)}`
+          }
+          
+          setError(errorMessage)
+          setInitializing(false)
+          
+          // Xóa error parameters khỏi URL
+          window.history.replaceState(null, '', window.location.pathname)
+          
+          // Hiển thị toast
+          toast({
+            title: 'Lỗi',
+            description: errorMessage,
+            variant: 'destructive',
+            duration: 10000,
+          })
+          
+          return
+        }
+        
+        // Kiểm tra query params (code từ Supabase redirect)
         const code = urlParams.get('code')
         const tokenHash = urlParams.get('token_hash')
-        const typeFromQuery = urlParams.get('type')
+        let typeFromQuery = urlParams.get('type')
         
-        // Kiểm tra hash fragment
+        // Nếu không có type nhưng có password_reset_initiated trong sessionStorage, coi như recovery
+        if (!typeFromQuery && typeof window !== 'undefined') {
+          const passwordResetInitiated = sessionStorage.getItem('password_reset_initiated')
+          if (passwordResetInitiated === 'true') {
+            typeFromQuery = 'recovery'
+            sessionStorage.removeItem('password_reset_initiated')
+          }
+        }
+        
+        // Kiểm tra hash fragment (cho cả error và access_token)
         const hash = window.location.hash.substring(1)
         const hashParams = new URLSearchParams(hash)
+        
+        // Kiểm tra error trong hash fragment
+        const hashError = hashParams.get('error')
+        const hashErrorCode = hashParams.get('error_code')
+        const hashErrorDescription = hashParams.get('error_description')
+        
+        if (hashError || hashErrorCode || hashErrorDescription) {
+          console.log('Error detected in hash fragment:', { hashError, hashErrorCode, hashErrorDescription })
+          
+          let errorMessage = 'Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.'
+          
+          if (hashErrorCode === 'otp_expired' || hashErrorDescription?.includes('expired')) {
+            errorMessage = 'Link đặt lại mật khẩu đã hết hạn. Link chỉ có hiệu lực trong 1 giờ. Vui lòng yêu cầu email mới.'
+          } else if (hashErrorCode === 'access_denied' || hashErrorDescription?.includes('invalid')) {
+            errorMessage = 'Link đặt lại mật khẩu không hợp lệ. Vui lòng yêu cầu email mới.'
+          } else if (hashErrorDescription) {
+            errorMessage = `Lỗi: ${decodeURIComponent(hashErrorDescription)}`
+          }
+          
+          setError(errorMessage)
+          setInitializing(false)
+          
+          // Xóa hash fragment
+          window.history.replaceState(null, '', window.location.pathname)
+          
+          // Hiển thị toast
+          toast({
+            title: 'Lỗi',
+            description: errorMessage,
+            variant: 'destructive',
+            duration: 10000,
+          })
+          
+          return
+        }
+        
+        // Kiểm tra access_token trong hash fragment (nếu không có error)
         const accessToken = hashParams.get('access_token')
         const refreshToken = hashParams.get('refresh_token')
         const typeFromHash = hashParams.get('type')
@@ -311,6 +393,8 @@ export function ResetPasswordForm() {
 
   // Error state khi không có token hoặc session
   if (error && !password && !confirmPassword) {
+    const isExpiredError = error.includes('hết hạn') || error.includes('expired')
+    
     return (
       <Card className="w-full max-w-md mx-auto border-0 shadow-2xl bg-white/90 backdrop-blur-sm">
         <CardHeader className="text-center pb-6">
@@ -318,7 +402,7 @@ export function ResetPasswordForm() {
             <AlertCircle className="h-8 w-8 text-red-600" />
           </div>
           <CardTitle className="text-2xl font-bold text-gray-900">
-            Link không hợp lệ
+            {isExpiredError ? 'Link đã hết hạn' : 'Link không hợp lệ'}
           </CardTitle>
           <CardDescription className="text-gray-600">
             {error}
@@ -326,6 +410,12 @@ export function ResetPasswordForm() {
         </CardHeader>
         
         <CardContent className="px-6 pb-6 space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800">
+              <strong>Lưu ý:</strong> Link đặt lại mật khẩu chỉ có hiệu lực trong 1 giờ. Nếu link đã hết hạn hoặc không hợp lệ, vui lòng yêu cầu email mới.
+            </p>
+          </div>
+          
           <Button
             onClick={() => router.push('/')}
             className="w-full h-12 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-medium rounded-xl"
@@ -335,7 +425,10 @@ export function ResetPasswordForm() {
           
           <Button
             variant="outline"
-            onClick={() => router.push('/')}
+            onClick={() => {
+              // Redirect đến trang chủ với query param để mở forgot password form
+              router.push('/?action=forgot-password')
+            }}
             className="w-full h-12"
           >
             Yêu cầu email đặt lại mật khẩu mới
