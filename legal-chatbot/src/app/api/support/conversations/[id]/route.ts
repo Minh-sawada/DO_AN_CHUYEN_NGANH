@@ -27,7 +27,7 @@ export async function PATCH(
       updateData.assigned_to = assignedTo
     }
 
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await (supabaseAdmin as any)
       .from('support_conversations')
       .update(updateData)
       .eq('id', id)

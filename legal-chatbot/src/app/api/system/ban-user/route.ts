@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin } from '@/lib/supabase'
+import { supabaseAdmin, Profile } from '@/lib/supabase'
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Ban user using RPC function
-    const { data, error } = await supabaseAdmin.rpc('ban_user', {
+    const { data, error } = await (supabaseAdmin as any).rpc('ban_user', {
       p_user_id: user_id,
       p_reason: reason,
       p_banned_by: banned_by,
@@ -45,11 +45,11 @@ export async function POST(req: NextRequest) {
         .from('profiles')
         .select('role')
         .eq('id', banned_by)
-        .single()
+        .single() as { data: Pick<Profile, 'role'> | null }
       
       // Chỉ log nếu user là admin hoặc editor
       if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'editor')) {
-        await supabaseAdmin.rpc('log_user_activity', {
+        await (supabaseAdmin as any).rpc('log_user_activity', {
           p_user_id: banned_by,
           p_activity_type: 'admin_action',
           p_action: 'ban_user',
@@ -121,7 +121,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     // Unban user using RPC function
-    const { data, error } = await supabaseAdmin.rpc('unban_user', {
+    const { data, error } = await (supabaseAdmin as any).rpc('unban_user', {
       p_user_id: userId
     })
 
@@ -169,11 +169,11 @@ export async function DELETE(req: NextRequest) {
           .from('profiles')
           .select('role')
           .eq('id', unbannedBy)
-          .single()
+          .single() as { data: Pick<Profile, 'role'> | null }
         
         // Chỉ log nếu user là admin hoặc editor
         if (userProfile && (userProfile.role === 'admin' || userProfile.role === 'editor')) {
-          await supabaseAdmin.rpc('log_user_activity', {
+          await (supabaseAdmin as any).rpc('log_user_activity', {
             p_user_id: unbannedBy,
             p_activity_type: 'admin_action',
             p_action: 'unban_user',

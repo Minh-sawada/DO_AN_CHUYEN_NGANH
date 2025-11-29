@@ -21,7 +21,6 @@ import {
   ChevronRight
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
-import { Law } from '@/lib/supabase'
 
 interface DashboardStats {
   totalLaws: number
@@ -30,6 +29,17 @@ interface DashboardStats {
   activeUsers: number
   avgResponseTime: number
   successRate: number
+}
+
+interface DashboardLaw {
+  id: number
+  title: string | null
+  so_hieu: string | null
+  loai_van_ban: string | null
+  created_at: string | null
+  noi_dung: string | null
+  noi_dung_html: string | null
+  embedding: null
 }
 
 interface TimeStats {
@@ -76,7 +86,7 @@ export function AdminDashboard() {
     daily: [],
     monthly: []
   })
-  const [recentLaws, setRecentLaws] = useState<Law[]>([])
+  const [recentLaws, setRecentLaws] = useState<DashboardLaw[]>([])
   const [loading, setLoading] = useState(true)
   const [dataLoaded, setDataLoaded] = useState(false) // Track if data has been loaded
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month' | 'year'>('today')
@@ -103,7 +113,7 @@ export function AdminDashboard() {
       const sevenDaysAgoISO = sevenDaysAgo.toISOString()
       
       // Load song song để tăng tốc
-      const [lawsResult, statsResult, activeUsersResult, successRateResult, recentQueriesResult] = await Promise.all([
+      const [lawsResult, statsResult, successRateResult, recentQueriesResult] = await Promise.all([
         // CHỈ select các field cần thiết, KHÔNG select noi_dung (quá lớn)
         supabase
           .from('laws')
@@ -113,14 +123,6 @@ export function AdminDashboard() {
         
         // Fetch stats
         supabase.rpc('get_law_stats'),
-        
-        // Đếm số active users (unique user_id trong 7 ngày qua)
-        supabase
-          .from('query_logs')
-          .select('user_id, created_at')
-          .not('user_id', 'is', null)
-          .gte('created_at', sevenDaysAgoISO)
-          .limit(10000), // Limit để tránh quá nhiều data nhưng vẫn đủ để count unique
         
         // Tính success rate (queries có response / tổng queries)
         Promise.all([
@@ -141,52 +143,19 @@ export function AdminDashboard() {
       ])
 
       // Xử lý laws
-      const safeLaws = (lawsResult.data || []).map(law => ({
-        ...law,
+      const safeLaws: DashboardLaw[] = (lawsResult.data || []).map((law: any) => ({
+        id: law.id,
+        title: law.title ?? null,
+        so_hieu: law.so_hieu ?? null,
+        loai_van_ban: law.loai_van_ban ?? null,
+        created_at: law.created_at ?? null,
         noi_dung: null,
         noi_dung_html: null,
         embedding: null
       }))
       setRecentLaws(safeLaws)
 
-      // Tính số unique active users
-      let activeUsers = 0
-      if (activeUsersResult.error) {
-        console.error('Error fetching active users:', activeUsersResult.error)
-      } else if (activeUsersResult.data && activeUsersResult.data.length > 0) {
-        const userIds = activeUsersResult.data
-          .map((q: any) => q.user_id)
-          .filter((id: any) => id !== null && id !== undefined)
-        const uniqueUserIds = new Set(userIds)
-        activeUsers = uniqueUserIds.size
-        
-        // Debug log (chỉ trong development)
-        if (process.env.NODE_ENV === 'development') {
-          const sampleDates = activeUsersResult.data
-            .map((q: any) => q.created_at)
-            .slice(0, 3)
-          console.log('Active users calculation:', {
-            totalRecords: activeUsersResult.data.length,
-            recordsWithUserId: userIds.length,
-            uniqueUsers: activeUsers,
-            sampleUserIds: Array.from(uniqueUserIds).slice(0, 5),
-            dateRange: '7 days ago to now',
-            sevenDaysAgo: sevenDaysAgoISO,
-            sampleDates: sampleDates,
-            now: new Date().toISOString()
-          })
-        }
-      } else {
-        // Không có data hoặc không có error
-        if (process.env.NODE_ENV === 'development') {
-          console.log('Active users: No query_logs with user_id in the last 7 days', {
-            hasData: !!activeUsersResult.data,
-            dataLength: activeUsersResult.data?.length || 0,
-            sevenDaysAgo: sevenDaysAgoISO,
-            now: new Date().toISOString()
-          })
-        }
-      }
+      // activeUsers sẽ được lấy trực tiếp từ get_law_stats
 
       // Tính success rate
       let successRate = 0
@@ -203,11 +172,12 @@ export function AdminDashboard() {
 
       // Xử lý stats
       if (statsResult.data && statsResult.data.length > 0) {
+        const row = statsResult.data[0] as any
         setStats({
-          totalLaws: statsResult.data[0].total_laws || 0,
-          totalQueries: statsResult.data[0].total_queries || 0,
+          totalLaws: row.total_laws || 0,
+          totalQueries: row.total_queries || 0,
           recentQueries: recentQueries, // Dùng số liệu trực tiếp từ query
-          activeUsers: activeUsers,
+          activeUsers: row.active_users || 0,
           avgResponseTime: 0, // Không có data để tính, có thể thêm sau
           successRate: successRate
         })
@@ -240,16 +210,33 @@ export function AdminDashboard() {
       const yearStart = new Date(now)
       yearStart.setFullYear(yearStart.getFullYear() - 1)
 
-      // Fetch queries by time - chỉ count, không load toàn bộ data
+      // Fetch queries by time - dùng chat_messages (role='user') thay cho query_logs
       const [todayQueries, weekQueries, monthQueries, yearQueries, todayQueriesForHourly] = await Promise.all([
-        supabase.from('query_logs').select('id', { count: 'exact', head: true }).gte('created_at', todayStart.toISOString()),
-        supabase.from('query_logs').select('id', { count: 'exact', head: true }).gte('created_at', weekStart.toISOString()),
-        supabase.from('query_logs').select('id', { count: 'exact', head: true }).gte('created_at', monthStart.toISOString()),
-        supabase.from('query_logs').select('id', { count: 'exact', head: true }).gte('created_at', yearStart.toISOString()),
-        // CHỈ lấy queries của HÔM NAY cho biểu đồ theo giờ
         supabase
-          .from('query_logs')
+          .from('chat_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('role', 'user')
+          .gte('created_at', todayStart.toISOString()),
+        supabase
+          .from('chat_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('role', 'user')
+          .gte('created_at', weekStart.toISOString()),
+        supabase
+          .from('chat_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('role', 'user')
+          .gte('created_at', monthStart.toISOString()),
+        supabase
+          .from('chat_messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('role', 'user')
+          .gte('created_at', yearStart.toISOString()),
+        // CHỈ lấy truy vấn (user messages) của HÔM NAY cho biểu đồ theo giờ
+        supabase
+          .from('chat_messages')
           .select('created_at')
+          .eq('role', 'user')
           .gte('created_at', todayStart.toISOString())
           .order('created_at', { ascending: false })
       ])
@@ -262,11 +249,11 @@ export function AdminDashboard() {
         supabase.from('laws').select('id', { count: 'exact', head: true }).gte('created_at', yearStart.toISOString())
       ])
 
-      // Count unique users thực tế từ query_logs
+      // Count unique users thực tế từ user_activities
       const countUniqueUsers = async (startDate: Date): Promise<number> => {
         try {
           const { data, error } = await supabase
-            .from('query_logs')
+            .from('user_activities')
             .select('user_id')
             .gte('created_at', startDate.toISOString())
             .not('user_id', 'is', null)
@@ -290,7 +277,7 @@ export function AdminDashboard() {
         countUniqueUsers(yearStart)
       ])
 
-      // Process hourly data (CHỈ của HÔM NAY)
+      // Process hourly data (CHỈ của HÔM NAY) dựa trên chat_messages (role='user')
       const hourlyData: { [key: number]: number } = {}
       if (todayQueriesForHourly.data) {
         todayQueriesForHourly.data.forEach(q => {
@@ -310,10 +297,11 @@ export function AdminDashboard() {
         count: hourlyData[i] || 0
       }))
 
-      // Process daily data (last 30 days) - cần fetch lại data của 30 ngày
+      // Process daily data (last 30 days) - dùng chat_messages (role='user')
       const dailyQueriesData = await supabase
-        .from('query_logs')
+        .from('chat_messages')
         .select('created_at')
+        .eq('role', 'user')
         .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
         .limit(5000)
       
@@ -329,10 +317,11 @@ export function AdminDashboard() {
         .slice(-30)
         .map(([date, count]) => ({ date, count }))
 
-      // Process monthly data (last 12 months) - cần fetch lại data của 12 tháng
+      // Process monthly data (last 12 months) - dùng chat_messages (role='user')
       const monthlyQueriesData = await supabase
-        .from('query_logs')
+        .from('chat_messages')
         .select('created_at')
+        .eq('role', 'user')
         .gte('created_at', new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())
         .limit(10000)
       
