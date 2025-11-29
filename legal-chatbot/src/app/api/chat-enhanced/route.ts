@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body trước để có clientUserId
     const body = await request.json()
-    const { query, messages: previousMessages = [], userId: clientUserId } = body
+    const { query, messages: previousMessages = [], userId: clientUserId, uploadedFiles = [] } = body
     
     // Lấy userId từ cookies - dùng cách giống các route khác
     const cookieStore = await cookies()
@@ -171,7 +171,9 @@ export async function POST(request: NextRequest) {
       hasSupabaseCookies: allCookies.some(c => c.name.includes('supabase') || c.name.includes('sb-')),
       hasCookieHeader: !!cookieHeader,
       cookieHeaderLength: cookieHeader?.length || 0,
-      hasClientUserId: !!clientUserId
+      hasClientUserId: !!clientUserId,
+      uploadedFilesCount: uploadedFiles.length,
+      uploadedFiles: uploadedFiles.map((f: any) => ({ name: f.name, size: f.size, hasExtractedText: !!f.extractedText }))
     })
     
     const authSupabase = createServerClient(
@@ -435,7 +437,8 @@ export async function POST(request: NextRequest) {
             messages: previousMessages,
             context: conversationContext,
             topic: 'logistics',
-            wantsSummary
+            wantsSummary,
+            uploadedFiles: uploadedFiles // Thêm file data để AI đọc nội dung
           }),
         })
 

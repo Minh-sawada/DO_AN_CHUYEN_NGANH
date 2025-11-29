@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
     const userAgent = request.headers.get('user-agent') || null
 
-    const { data, error } = await supabaseAdmin.rpc('log_login_attempt', {
+    const { data, error } = await (supabaseAdmin as any).rpc('log_login_attempt', {
       p_email: email,
       p_success: success,
       p_ip_address: ipAddress,

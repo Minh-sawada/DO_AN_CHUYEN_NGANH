@@ -124,11 +124,49 @@ export function ChatSidebar({ currentSessionId, onNewChat, onSelectSession, refr
     }
   }
 
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      return formatDistanceToNow(date, { 
+        addSuffix: true, 
+        locale: vi 
+      })
+    } catch (error) {
+      return 'Không xác định'
+    }
+  }
+
+  const formatFullDateTime = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      const now = new Date()
+      const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60)
+      
+      // Nếu trong 24 giờ, chỉ hiển thị giờ
+      if (diffInHours < 24) {
+        return date.toLocaleTimeString('vi-VN', {
+          hour: '2-digit',
+          minute: '2-digit'
+        })
+      }
+      
+      // Nếu quá 24 giờ, hiển thị ngày tháng
+      return date.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    } catch (error) {
+      return 'Không xác định'
+    }
+  }
+
   const getSessionTitle = (session: ChatSession) => {
     if (session.title && session.title.trim() && session.title !== 'Cuộc trò chuyện mới') {
-      // Giới hạn 40 ký tự cho title
-      return session.title.length > 40 
-        ? session.title.substring(0, 40) + '...' 
+      // Giới hạn 25 ký tự cho title để không bị che nút xóa
+      return session.title.length > 25 
+        ? session.title.substring(0, 25) + '...' 
         : session.title
     }
     return 'Cuộc trò chuyện mới'
@@ -177,27 +215,30 @@ export function ChatSidebar({ currentSessionId, onNewChat, onSelectSession, refr
                     `}
                   >
                     <MessageSquare className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`} />
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 mr-2">
                       <div className={`text-sm font-medium truncate ${isActive ? 'text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-300'}`}>
                         {getSessionTitle(session)}
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        {formatDistanceToNow(new Date(session.updated_at), {
-                          addSuffix: true,
-                          locale: vi
-                        })}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatDate(session.updated_at)}
+                        </span>
+                        <span className="text-xs text-gray-400 dark:text-gray-500">
+                          {formatFullDateTime(session.updated_at)}
+                        </span>
                       </div>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
+                    <div className="flex-shrink-0">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
                         <DropdownMenuItem
                           onClick={(e) => handleDeleteSession(session.id, e)}
@@ -208,6 +249,7 @@ export function ChatSidebar({ currentSessionId, onNewChat, onSelectSession, refr
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    </div>
                   </div>
                 )
               })}

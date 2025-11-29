@@ -11,8 +11,8 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    const { data, error } = await supabaseAdmin.rpc('check_user_ban_status', {
+9
+    const { data, error } = await (supabaseAdmin as any).rpc('check_user_ban_status', {
       p_email: email
     })
 

@@ -173,52 +173,20 @@ export function AdminPanel() {
     try {
       setStatsLoading(true)
       
-      // Cache stats trong 30 giây để tránh query liên tục
-      const cacheKey = 'dashboard_stats_cache'
-      const cached = sessionStorage.getItem(cacheKey)
-      const now = Date.now()
-      
-      if (cached) {
-        const { data: cachedData, timestamp } = JSON.parse(cached)
-        if (now - timestamp < 30000) { // 30 giây cache
-          setStats(cachedData)
-          setStatsLoading(false)
-          return
+      // Dùng cùng hàm get_law_stats như AdminDashboard để đảm bảo đồng bộ số liệu
+      const { data, error } = await supabase.rpc('get_law_stats')
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        const row = data[0] as any
+        const statsData = {
+          totalLaws: row.total_laws || 0,
+          totalQueries: row.total_queries || 0,
+          recentQueries: row.recent_queries || 0
         }
+
+        setStats(statsData)
       }
-      
-      // Tính toán ngày 7 ngày trước
-      const sevenDaysAgo = new Date()
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-      const sevenDaysAgoISO = sevenDaysAgo.toISOString()
-      
-      // Fetch stats song song
-      const [lawsCount, queriesCount, recentQueriesCount] = await Promise.all([
-        supabase
-          .from('laws')
-          .select('id', { count: 'exact', head: true }),
-        supabase
-          .from('query_logs')
-          .select('id', { count: 'exact', head: true }),
-        supabase
-          .from('query_logs')
-          .select('id', { count: 'exact', head: true })
-          .gte('created_at', sevenDaysAgoISO)
-      ])
-      
-      const statsData = {
-        totalLaws: lawsCount.count || 0,
-        totalQueries: queriesCount.count || 0,
-        recentQueries: recentQueriesCount.count || 0
-      }
-      
-      setStats(statsData)
-      
-      // Cache lại
-      sessionStorage.setItem(cacheKey, JSON.stringify({
-        data: statsData,
-        timestamp: now
-      }))
     } catch (error) {
       console.error('Error fetching stats:', error)
       toast({

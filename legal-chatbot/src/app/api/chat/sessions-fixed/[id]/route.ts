@@ -189,7 +189,7 @@ export async function PATCH(
       }, { status: 401 })
     }
 
-    const { id } = params
+    const { id } = await params
     const body = await request.json()
     const { title } = body
 

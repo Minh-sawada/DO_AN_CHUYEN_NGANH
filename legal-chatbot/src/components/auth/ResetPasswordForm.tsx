@@ -256,10 +256,10 @@ export function ResetPasswordForm() {
 
         // Ưu tiên 3: Kiểm tra session hiện tại (có thể đã được set từ trước)
         console.log('Checking existing session...')
-        const { data: { session }, error } = await supabase.auth.getSession()
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        if (error) {
-          console.error('Get session error:', error)
+        if (sessionError) {
+          console.error('Get session error:', sessionError)
           setError('Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn. Vui lòng yêu cầu lại email.')
           setInitializing(false)
         } else if (session) {

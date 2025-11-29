@@ -10,6 +10,9 @@ import { useToast } from '@/hooks/use-toast'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import { SimpleFileUpload } from './SimpleFileUpload'
+import { formatDistanceToNow } from 'date-fns'
+import { vi } from 'date-fns/locale'
 
 // Type definitions for Speech Recognition API
 declare global {
@@ -86,6 +89,7 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(sessionId || null)
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([])
   const scrollAreaRef = useRef<HTMLDivElement>(null)
   const { toast } = useToast()
 
@@ -114,6 +118,18 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
   const recognitionRef = useRef<SpeechRecognition | null>(null)
   const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const lastTranscriptTimeRef = useRef<number>(0)
+
+  // Format thời gian cho message
+  const formatMessageTime = (timestamp: Date) => {
+    try {
+      return formatDistanceToNow(timestamp, { 
+        addSuffix: true, 
+        locale: vi 
+      })
+    } catch (error) {
+      return 'Vừa xong'
+    }
+  }
 
   // Load messages từ session khi sessionId thay đổi
   useEffect(() => {
@@ -378,6 +394,21 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
     } catch (error) {
       console.error('❌ Error saving message to session:', error)
     }
+  }
+
+  // Handle file processing
+  const handleFileProcessed = (file: any) => {
+    setUploadedFiles(prev => [...prev, file])
+    
+    // Chỉ hiển thị thông báo file đã upload, không hiển thị nội dung
+    // Nhưng lưu extracted text để gửi cho AI khi cần
+    const fileInfo = `[File: ${file.name} đã được tải lên thành công. Bạn có thể đặt câu hỏi về nội dung file này.]`
+    setInput(prev => prev + (prev ? '\n\n' : '') + fileInfo)
+    
+    toast({
+      title: 'File added to chat',
+      description: 'File đã được xử lý và sẵn sàng để hỏi đáp',
+    })
   }
 
   useEffect(() => {
@@ -768,7 +799,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           messages: messages.map(msg => ({
             role: msg.role,
             content: msg.content
-          })) // Gửi lịch sử tin nhắn để có context
+          })), // Gửi lịch sử tin nhắn để có context
+          uploadedFiles: uploadedFiles // Gửi file data để AI có thể đọc nội dung
         }),
       })
 
@@ -823,6 +855,8 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
       setMessages(prev => [...prev, errorMessage])
     } finally {
       setIsLoading(false)
+      // Clear uploaded files after sending
+      setUploadedFiles([])
     }
   }
 
@@ -907,8 +941,13 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                   <div className={`flex-1 ${message.role === 'user' ? 'flex justify-end' : 'flex justify-start'}`}>
                     <div className={`max-w-[85%] ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
                       {message.role === 'user' ? (
-                        <div className="inline-block bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-2xl rounded-tr-sm px-4 py-2.5">
-                          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                        <div>
+                          <div className="inline-block bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-2xl rounded-tr-sm px-4 py-2.5">
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1 text-right">
+                            {formatMessageTime(message.timestamp)}
+                          </div>
                         </div>
                       ) : (
                         <div className="bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
@@ -957,6 +996,9 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
                             </div>
                           </div>
                         )}
+                        <div className="text-xs text-gray-500 mt-2">
+                          {formatMessageTime(message.timestamp)}
+                        </div>
                         </div>
                       )}
                     </div>
@@ -1037,16 +1079,15 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           </p>
           
           {/* Action buttons like ChatGPT */}
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <SimpleFileUpload 
+              onFileProcessed={handleFileProcessed}
+              disabled={isLoading || !user}
+            />
+          </div>
+          
+          {/* Other action buttons */}
           <div className="flex items-center justify-center gap-4">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 px-3 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-            >
-              <Paperclip className="h-4 w-4 mr-1.5" />
-              Đính kèm
-            </Button>
             <Button
               type="button"
               variant="ghost"
