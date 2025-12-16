@@ -15,6 +15,30 @@ export default function HomePage() {
   // Redirect đến trang login nếu chưa đăng nhập
   useEffect(() => {
     if (!user && !loading) {
+      const code = searchParams.get('code')
+      const type = searchParams.get('type')
+      const error = searchParams.get('error')
+      const errorCode = searchParams.get('error_code')
+      const errorDescription = searchParams.get('error_description')
+
+      // Nếu đang ở flow recovery/reset password của Supabase thì KHÔNG redirect sang /login.
+      // Nếu redirect sớm sẽ làm mất/đứt flow xử lý code/hash token.
+      const hasRecoveryQuery =
+        !!code ||
+        type === 'recovery' ||
+        type === 'reset' ||
+        !!error ||
+        !!errorCode ||
+        !!errorDescription
+
+      const hasRecoveryHash =
+        typeof window !== 'undefined' &&
+        (window.location.hash.includes('access_token=') || window.location.hash.includes('error='))
+
+      if (hasRecoveryQuery || hasRecoveryHash) {
+        return
+      }
+
       // Lưu URL hiện tại để redirect lại sau khi đăng nhập (nếu cần)
       const currentPath = window.location.pathname + window.location.search
       if (currentPath !== '/login') {
@@ -22,7 +46,7 @@ export default function HomePage() {
       }
       router.push('/login')
     }
-  }, [user, loading, router])
+  }, [user, loading, router, searchParams])
 
   // Xử lý code và error từ Supabase callback
   useEffect(() => {

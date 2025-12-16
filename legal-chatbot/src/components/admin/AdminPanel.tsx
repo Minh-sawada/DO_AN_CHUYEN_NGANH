@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,7 +25,8 @@ import {
   Search,
   Filter,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  RefreshCw
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Law, Profile } from '@/lib/supabase'
@@ -35,16 +36,14 @@ import { BackupStatus } from './BackupStatus'
 import { LawUpload } from './LawUpload'
 import { SystemManagement } from './SystemManagement'
 import { SupportChatAdmin } from './SupportChatAdmin'
+import { useAdminCache } from '@/contexts/AdminCacheContext'
 
 export function AdminPanel() {
   const { profile } = useAuth()
+  const { cache, updateCache, isCacheValid, clearCache } = useAdminCache()
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [laws, setLaws] = useState<Law[]>([])
-  const [stats, setStats] = useState({
-    totalLaws: 0,
-    totalQueries: 0,
-    recentQueries: 0
-  })
+  const [laws, setLaws] = useState<Law[]>(cache.laws)
+  const [stats, setStats] = useState(cache.stats)
   const [selectedLaw, setSelectedLaw] = useState<Law | null>(null)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
   const [loadingLawDetail, setLoadingLawDetail] = useState(false)
@@ -58,6 +57,9 @@ export function AdminPanel() {
   const [lawsLoading, setLawsLoading] = useState(false)
   const [statsLoading, setStatsLoading] = useState(false)
   
+  // Dùng ref để tránh fetch lại data không cần thiết
+  const dataFetchedRef = useRef(false)
+  
   const isAdmin = profile?.role === 'admin'
   const isEditor = profile?.role === 'editor'
 
@@ -67,17 +69,40 @@ export function AdminPanel() {
   }, [searchTerm, filterLoaiVanBan])
 
   useEffect(() => {
-    // Load song song để tăng tốc độ
+    // Load song song với caching - chỉ fetch 1 lần hoặc khi cache hết hạn
     const loadInitialData = async () => {
-      // Load stats và laws song song (quan trọng nhất cho dashboard)
-      await Promise.all([
-        fetchStats(),
-    fetchLaws()
-      ])
+      if (dataFetchedRef.current) return
+      
+      // Kiểm tra cache validity (5 phút)
+      const statsValid = isCacheValid('stats')
+      const lawsValid = isCacheValid('laws')
+      
+      if (statsValid && lawsValid) {
+        // Dùng cache, không cần fetch
+        setStats(cache.stats)
+        setLaws(cache.laws)
+        dataFetchedRef.current = true
+        return
+      }
+      
+      dataFetchedRef.current = true
+      
+      // Fetch song song chỉ những gì cần
+      const promises = []
+      if (!statsValid) {
+        promises.push(fetchStats())
+      }
+      if (!lawsValid) {
+        promises.push(fetchLaws())
+      }
+      
+      if (promises.length > 0) {
+        await Promise.all(promises)
+      }
     }
     
     loadInitialData()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, []) // Empty dependency array - chỉ chạy 1 lần khi mount
 
   const fetchLaws = async () => {
     try {
@@ -127,6 +152,8 @@ export function AdminPanel() {
 
       setLaws(lawsWithNullFields)
       setTotalLaws(count || 0)
+      // Lưu vào cache
+      updateCache('laws', lawsWithNullFields)
     } catch (error: any) {
       console.error('Error fetching laws:', error)
       const errorMessage = error?.message || error?.toString() || 'Không thể tải danh sách văn bản pháp luật'
@@ -186,6 +213,8 @@ export function AdminPanel() {
         }
 
         setStats(statsData)
+        // Lưu vào cache
+        updateCache('stats', statsData)
       }
     } catch (error) {
       console.error('Error fetching stats:', error)
@@ -215,6 +244,8 @@ export function AdminPanel() {
         description: 'Đã xóa văn bản pháp luật',
       })
 
+      // Clear cache và fetch lại
+      clearCache('laws')
       fetchLaws()
       fetchStats()
     } catch (error) {
@@ -225,6 +256,16 @@ export function AdminPanel() {
         variant: 'destructive',
       })
     }
+  }
+
+  const refreshData = async () => {
+    // Clear cache và fetch lại tất cả
+    clearCache()
+    dataFetchedRef.current = false
+    await Promise.all([
+      fetchLaws(),
+      fetchStats()
+    ])
   }
 
   return (
@@ -324,7 +365,7 @@ export function AdminPanel() {
       </TabsContent>
 
       <TabsContent value="upload" className="space-y-4">
-        <LawUpload />
+        <LawUpload onUploadSuccess={refreshData} />
         
         <div className="border-t pt-4 mt-4">
         <Card>
@@ -694,7 +735,7 @@ export function AdminPanel() {
       </TabsContent>
 
       <TabsContent value="laws" className="space-y-4">
-        <LawUpload />
+        <LawUpload onUploadSuccess={refreshData} />
         
         <div className="border-t pt-4 mt-4">
         <Card>

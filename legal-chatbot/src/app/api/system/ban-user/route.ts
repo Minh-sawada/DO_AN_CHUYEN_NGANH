@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       ban_id: data,
-      message: `User has been ${ban_type === 'permanent' ? 'permanently' : 'temporarily'} banned`
+      message: `User has been ${ban_type === 'permanent' ? 'permanently' : 'temporarily'} banned` 
     })
 
   } catch (error: any) {
@@ -88,7 +88,7 @@ export async function DELETE(req: NextRequest) {
     const userId = searchParams.get('user_id')
     const unbannedBy = searchParams.get('unbanned_by')
 
-    console.log('🔓 Unban request:', { userId, unbannedBy })
+    console.log(' Unban request:', { userId, unbannedBy })
 
     if (!userId) {
       return NextResponse.json(
@@ -113,7 +113,7 @@ export async function DELETE(req: NextRequest) {
     }
 
     if (!banCheck) {
-      console.log('⚠️ User is not banned:', userId)
+      console.log(' User is not banned:', userId)
       return NextResponse.json(
         { success: false, error: 'User is not currently banned' },
         { status: 404 }
@@ -125,7 +125,7 @@ export async function DELETE(req: NextRequest) {
       p_user_id: userId
     })
 
-    console.log('🔓 Unban RPC result:', { data, error })
+    console.log(' Unban RPC result:', { data, error })
 
     if (error) {
       console.error('Error unbanning user:', error)
@@ -138,7 +138,7 @@ export async function DELETE(req: NextRequest) {
     // Kiểm tra xem có thực sự unban được không (data là boolean từ FOUND)
     // FOUND trả về true nếu có row bị xóa, false nếu không có row nào
     if (data === false || data === null) {
-      console.warn('⚠️ Unban returned false/null, but user was found in banned_users')
+      console.warn(' Unban returned false/null, but user was found in banned_users')
       // Vẫn tiếp tục vì đã kiểm tra ở trên
     }
 
@@ -153,13 +153,13 @@ export async function DELETE(req: NextRequest) {
       console.error('Error verifying unban:', verifyError)
       // Không fail vì có thể đã unban thành công
     } else if (verifyCheck) {
-      console.error('❌ User still in banned_users after unban!')
+      console.error(' User still in banned_users after unban!')
       return NextResponse.json(
         { success: false, error: 'Failed to unban user - user still in banned list' },
         { status: 500 }
       )
     } else {
-      console.log('✅ User successfully unbanned:', userId)
+      console.log(' User successfully unbanned:', userId)
     }
 
     // Log unban action (chỉ log nếu unbannedBy là admin hoặc editor)

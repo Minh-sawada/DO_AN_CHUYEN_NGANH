@@ -59,6 +59,52 @@ export async function PATCH(
   }
 }
 
+// DELETE: Xóa toàn bộ cuộc trò chuyện (messages + conversation)
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params
+
+    // Xóa toàn bộ tin nhắn thuộc cuộc trò chuyện
+    const { error: deleteMessagesError } = await (supabaseAdmin as any)
+      .from('support_messages')
+      .delete()
+      .eq('conversation_id', id)
+
+    if (deleteMessagesError) {
+      console.error('Error deleting support messages for conversation:', deleteMessagesError)
+      return NextResponse.json(
+        { success: false, error: 'Không thể xóa tin nhắn của cuộc trò chuyện' },
+        { status: 500 }
+      )
+    }
+
+    // Xóa cuộc trò chuyện
+    const { error: deleteConvError } = await (supabaseAdmin as any)
+      .from('support_conversations')
+      .delete()
+      .eq('id', id)
+
+    if (deleteConvError) {
+      console.error('Error deleting support conversation:', deleteConvError)
+      return NextResponse.json(
+        { success: false, error: 'Không thể xóa cuộc trò chuyện' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Error in DELETE conversation API:', error)
+    return NextResponse.json(
+      { success: false, error: error.message || 'Có lỗi xảy ra khi xóa cuộc trò chuyện' },
+      { status: 500 }
+    )
+  }
+}
+
 // GET: Lấy thông tin cuộc trò chuyện
 export async function GET(
   request: NextRequest,

@@ -108,28 +108,53 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
 
             const logData = await logResponse.json()
 
-            if (logResponse.ok) {
+            if (logResponse.ok && logData.success) {
               const banStatus = logData.result?.ban_status
+              const failedAttempts = logData.result?.failed_attempts || 0
+
+              // Kiểm tra nếu bị ban
               if (banStatus?.is_banned) {
                 const bannedUntil = banStatus?.banned_until
                   ? new Date(banStatus.banned_until).toLocaleString('vi-VN')
                   : null
 
                 toast({
-                  title: 'Tài khoản bị khóa tạm thời',
+                  title: 'Tài khoản bị khóa tạm thởi',
                   description: banStatus?.reason
                     ? `${banStatus.reason}${bannedUntil ? ` (mở khóa sau: ${bannedUntil})` : ''}`
-                    : 'Bạn đã bị khóa tạm thời do đăng nhập sai quá nhiều lần.',
+                    : 'Bạn đã bị khóa tạm thởi do đăng nhập sai quá nhiều lần.',
                   variant: 'destructive'
                 })
                 setLoading(false)
                 return
               }
+
+              // Hiển thị cảnh báo khi đăng nhập sai nhiều lần (nhưng chưa bị ban)
+              if (failedAttempts >= 4) {
+                toast({
+                  title: 'Cảnh báo bảo mật',
+                  description: `Bạn đã đăng nhập sai ${failedAttempts} lần. Nếu tiếp tục sai, tài khoản sẽ bị khóa tạm thởi.`,
+                  variant: 'destructive',
+                  duration: 6000,
+                })
+              } else if (failedAttempts >= 2) {
+                toast({
+                  title: 'Cảnh báo',
+                  description: `Bạn đã đăng nhập sai ${failedAttempts} lần. Vui lòng kiểm tra lại thông tin đăng nhập.`,
+                  variant: 'destructive',
+                  duration: 5000,
+                })
+              }
             } else {
-              console.error('Failed to log login attempt:', logData.error)
+              // Log lỗi nhưng không crash, chỉ log vào console
+              console.warn('Failed to log login attempt:', logData.error || 'Unknown error')
+              if (logData.errorDetails) {
+                console.warn('Error details:', logData.errorDetails)
+              }
             }
           } catch (logError) {
-            console.error('Log login attempt error:', logError)
+            // Log lỗi nhưng không crash
+            console.warn('Log login attempt error:', logError)
           }
 
           const friendly = friendlyAuthError(error.message)
@@ -301,7 +326,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
           </Button>
         </form>
 
-        <div className="relative">
+        <div className="relative mt-3">
           <div className="absolute inset-0 flex items-center">
             <span className="w-full border-t border-gray-200" />
           </div>

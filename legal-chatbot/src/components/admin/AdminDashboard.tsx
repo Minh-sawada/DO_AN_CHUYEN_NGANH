@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -89,16 +89,22 @@ export function AdminDashboard() {
   const [recentLaws, setRecentLaws] = useState<DashboardLaw[]>([])
   const [loading, setLoading] = useState(true)
   const [dataLoaded, setDataLoaded] = useState(false) // Track if data has been loaded
+  const [timeStatsLoaded, setTimeStatsLoaded] = useState(false)
+  const [timeStatsLoading, setTimeStatsLoading] = useState(false)
   const [timeRange, setTimeRange] = useState<'today' | 'week' | 'month' | 'year'>('today')
   const [lawsPage, setLawsPage] = useState(1)
   const lawsPerPage = 5
 
+  // Dùng ref để tránh re-fetch do component re-render
+  const dataFetchedRef = useRef(false)
+
   useEffect(() => {
-    // Chỉ fetch nếu chưa load data lần nào
-    if (!dataLoaded) {
+    // Chỉ fetch nếu chưa load data lần nào (dùng ref để chắc chắn)
+    if (!dataLoaded && !dataFetchedRef.current) {
+      dataFetchedRef.current = true
       fetchDashboardData()
     }
-  }, [dataLoaded])
+  }, []) // Empty dependency array - chỉ chạy 1 lần khi mount
 
   const fetchDashboardData = async () => {
     try {
@@ -183,9 +189,6 @@ export function AdminDashboard() {
         })
       }
 
-      // Fetch time-based statistics (chạy sau để không block UI)
-      fetchTimeStats()
-      
       // Đánh dấu đã load data
       setDataLoaded(true)
     } catch (error) {
@@ -197,6 +200,12 @@ export function AdminDashboard() {
 
   const fetchTimeStats = async () => {
     try {
+      // Nếu đang loading hoặc đã load rồi thì không fetch lại
+      if (timeStatsLoading || timeStatsLoaded) {
+        return
+      }
+
+      setTimeStatsLoading(true)
       const now = new Date()
       const todayStart = new Date(now)
       todayStart.setHours(0, 0, 0, 0)
@@ -363,8 +372,11 @@ export function AdminDashboard() {
         daily,
         monthly
       })
+      setTimeStatsLoaded(true)
     } catch (error) {
       console.error('Error fetching time stats:', error)
+    } finally {
+      setTimeStatsLoading(false)
     }
   }
 
@@ -619,7 +631,16 @@ export function AdminDashboard() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as any)} className="w-full">
+          <Tabs
+            value={timeRange}
+            onValueChange={async (v) => {
+              setTimeRange(v as any)
+              if (!timeStatsLoaded && !timeStatsLoading) {
+                await fetchTimeStats()
+              }
+            }}
+            className="w-full"
+          >
             <TabsList className="grid w-full grid-cols-4 mb-6">
               <TabsTrigger value="today">Hôm nay</TabsTrigger>
               <TabsTrigger value="week">Tuần này</TabsTrigger>

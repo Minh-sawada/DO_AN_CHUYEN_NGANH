@@ -11,10 +11,12 @@ import Link from 'next/link'
 import { Badge } from '@/components/ui/badge'
 import { getAvatarEmoji } from '@/lib/avatars'
 import { LoginForm } from '@/components/auth/LoginForm'
+import { useRouter } from 'next/navigation'
 
 export function Header() {
   const { user, profile, signOut } = useAuth()
   const [showLoginModal, setShowLoginModal] = useState(false)
+  const router = useRouter()
 
   // Debug: Log profile để kiểm tra
   useEffect(() => {
@@ -190,7 +192,13 @@ export function Header() {
                         </DropdownMenuItem>
                       )}
                       
-                      <DropdownMenuItem onClick={signOut} className="text-red-600 hover:text-red-700 hover:bg-red-50">
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          await signOut()
+                          router.push('/login')
+                        }}
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
                         <LogOut className="mr-2 h-4 w-4" />
                         <span>Đăng xuất</span>
                       </DropdownMenuItem>

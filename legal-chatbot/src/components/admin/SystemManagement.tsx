@@ -442,18 +442,11 @@ export function SystemManagement() {
       }
     })
 
-    // Convert map thành array và sort theo risk level và time
+    // Convert map thành array và sort theo thời gian (mới nhất lên đầu)
     const groupedArray = Array.from(grouped.values())
     
-    // Sort: risk cao nhất lên đầu, sau đó là time mới nhất
-    groupedArray.sort((a, b) => {
-      const riskOrder = { critical: 4, high: 3, medium: 2, low: 1 }
-      const riskDiff = riskOrder[b.riskLevel] - riskOrder[a.riskLevel]
-      if (riskDiff !== 0) return riskDiff
-      
-      // Nếu cùng risk, sort theo time mới nhất
-      return b.lastSeen.getTime() - a.lastSeen.getTime()
-    })
+    // Sort: chỉ theo time mới nhất (lastSeen) để log mới nhất luôn ở trên
+    groupedArray.sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())
 
     return groupedArray
   }
@@ -862,12 +855,9 @@ export function SystemManagement() {
             a.user_id === adminActivityFilters.user_id
           )
         }
-        
-        // Chỉ hiển thị activities của admin và editor
-        filteredActivities = filteredActivities.filter((a: UserActivity) => 
-          a.profiles?.role === 'admin' || a.profiles?.role === 'editor'
-        )
-        
+        // Không filter thêm theo role nữa để hiển thị MỌI admin_action
+        // (bao gồm ban_user / unban_user) kể cả khi profiles.role bị null
+
         // Group và analyze admin activities (không group admin actions)
         const grouped = groupAndAnalyzeActivities(filteredActivities)
         console.log('📊 Grouped admin activities:', grouped.length, 'groups')

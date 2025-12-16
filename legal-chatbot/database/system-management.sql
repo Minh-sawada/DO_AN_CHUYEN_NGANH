@@ -201,7 +201,7 @@ BEGIN
             -- Auto ban 1 giờ
             PERFORM ban_user(
                 NEW.user_id,
-                'Tự động khóa tạm thời do đăng nhập thất bại quá nhiều lần',
+                'Tự động khóa tạm thời do đăng nhập quá nhiều lần',
                 NULL,
                 'temporary',
                 1,

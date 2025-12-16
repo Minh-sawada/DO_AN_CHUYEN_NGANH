@@ -596,7 +596,7 @@ export async function POST(req: NextRequest) {
       const extractedFields = extractLawFields(extractedText)
 
       // Tạo law object từ text đã extract với đầy đủ trường
-      const lawData = {
+      const lawData: any = {
         _id: `upload-${Date.now()}`,
         title: extractedTitle,
         so_hieu: extractedFields.so_hieu,
@@ -616,17 +616,73 @@ export async function POST(req: NextRequest) {
         category: extractedFields.category,
         danh_sach_bang: null,
         link: null,
-        van_ban_duoc_dan: extractedFields.van_ban_duoc_dan,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        van_ban_duoc_dan: extractedFields.van_ban_duoc_dan
       }
 
-      // Insert vào database
-      const { data, error } = await supabaseAdmin
-        .from('laws')
-        .insert(lawData)
-        .select()
-        .single()
+      // Nếu đã có văn bản trùng số hiệu hoặc tiêu đề thì cập nhật thay vì tạo mới
+      let existingLawId: string | null = null
+
+      // Ưu tiên kiểm tra theo số hiệu nếu có
+      if (lawData.so_hieu) {
+        const { data: existingBySoHieu, error: existingBySoHieuError } = await supabaseAdmin
+          .from('laws')
+          .select('id')
+          .eq('so_hieu', lawData.so_hieu)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (existingBySoHieuError) {
+          console.error('Error checking existing law by so_hieu:', existingBySoHieuError)
+        } else if (existingBySoHieu) {
+          existingLawId = existingBySoHieu.id
+        }
+      }
+
+      // Nếu chưa tìm thấy theo số hiệu thì kiểm tra theo tiêu đề
+      if (!existingLawId && lawData.title) {
+        const { data: existingByTitle, error: existingByTitleError } = await supabaseAdmin
+          .from('laws')
+          .select('id')
+          .eq('title', lawData.title)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (existingByTitleError) {
+          console.error('Error checking existing law by title:', existingByTitleError)
+        } else if (existingByTitle) {
+          existingLawId = existingByTitle.id
+        }
+      }
+
+      let data: any
+      let error: any
+      let isUpdate = false
+
+      if (existingLawId) {
+        // Cập nhật văn bản cũ
+        const updateResult = await supabaseAdmin
+          .from('laws')
+          .update(lawData)
+          .eq('id', existingLawId)
+          .select()
+          .single()
+
+        data = updateResult.data
+        error = updateResult.error
+        isUpdate = true
+      } else {
+        // Tạo văn bản mới
+        const insertResult = await supabaseAdmin
+          .from('laws')
+          .insert(lawData)
+          .select()
+          .single()
+
+        data = insertResult.data
+        error = insertResult.error
+      }
 
       if (error) {
         throw new Error('Lỗi khi lưu vào database: ' + error.message)
@@ -665,7 +721,8 @@ export async function POST(req: NextRequest) {
                 fileSize: file.size,
                 lawId: data.id,
                 title: data.title,
-                textLength: extractedText.length
+                textLength: extractedText.length,
+                operation: isUpdate ? 'update' : 'insert'
               },
               p_ip_address: clientIP,
               p_user_agent: clientUserAgent,
@@ -690,11 +747,12 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: 'Upload thành công',
+        message: isUpdate ? 'Cập nhật văn bản thành công' : 'Upload thành công',
         data: {
           id: data.id,
           title: data.title,
-          text_length: extractedText.length
+          text_length: extractedText.length,
+          updated: isUpdate
         }
       })
 
