@@ -818,6 +818,14 @@ export function ChatInterface({ sessionId, onSessionCreated }: ChatInterfaceProp
           setMessages(prev => prev.filter(msg => msg.id !== userMessage.id))
           return
         }
+        // Xử lý lỗi 429 (Rate Limit) - không hiển thị thông báo cho user
+        if (response.status === 429) {
+          console.warn('Rate limit reached, silently handling...')
+          // Xóa message đã thêm
+          setMessages(prev => prev.filter(msg => msg.id !== userMessage.id))
+          setIsLoading(false)
+          return
+        }
         throw new Error('Lỗi khi gửi tin nhắn')
       }
 

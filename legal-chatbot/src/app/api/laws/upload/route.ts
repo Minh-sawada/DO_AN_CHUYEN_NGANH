@@ -221,7 +221,37 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Insert vào database (batch insert)
+    // Tìm các văn bản đã tồn tại theo tiêu đề để có thể update thay vì tạo mới
+    const uniqueTitles = Array.from(new Set(validatedLaws.map((l: any) => l.title).filter(Boolean)))
+    const existingMap = new Map<string, string>()
+
+    if (uniqueTitles.length > 0) {
+      const { data: existingLaws, error: existingError } = await supabaseAdmin
+        .from('laws')
+        .select('id, title')
+        .in('title', uniqueTitles)
+
+      if (existingError) {
+        console.error('Error fetching existing laws for upsert by title:', existingError)
+      } else if (existingLaws) {
+        for (const law of existingLaws as any[]) {
+          if (law.title && law.id) {
+            // Nếu có nhiều bản trùng title, ưu tiên bản mới nhất (id cuối cùng sẽ ghi đè)
+            existingMap.set(law.title, law.id)
+          }
+        }
+      }
+    }
+
+    // Gán id cũ cho các văn bản trùng title để upsert cập nhật thay vì tạo mới
+    validatedLaws.forEach((law: any) => {
+      const existingId = law.title ? existingMap.get(law.title) : undefined
+      if (existingId) {
+        law.id = existingId
+      }
+    })
+
+    // Insert/Update vào database (batch upsert)
     const batchSize = 100
     let inserted = 0
     let updated = 0
@@ -230,9 +260,6 @@ export async function POST(req: NextRequest) {
     for (let i = 0; i < validatedLaws.length; i += batchSize) {
       const batch = validatedLaws.slice(i, i + batchSize)
       
-      // Sử dụng upsert để tránh trùng lặp
-      // Supabase không hỗ trợ onConflict trực tiếp, nên dùng insert và bỏ qua lỗi duplicate
-      // Hoặc check trước rồi insert/update
       const { data, error } = await supabaseAdmin
         .from('laws')
         .upsert(batch)
@@ -242,10 +269,15 @@ export async function POST(req: NextRequest) {
         console.error(`Error inserting batch ${i / batchSize + 1}:`, error)
         failed += batch.length
         errors.push(`Batch ${i / batchSize + 1}: ${error.message}`)
-      } else {
-        // Kiểm tra số lượng inserted vs updated
-        // (Supabase upsert sẽ trả về cả insert và update)
-        inserted += data?.length || 0
+      } else if (data) {
+        // Ước lượng inserted vs updated dựa trên việc có id cũ hay không
+        for (const row of data as any[]) {
+          if (row.id && existingMap.has(row.title)) {
+            updated += 1
+          } else {
+            inserted += 1
+          }
+        }
       }
     }
 

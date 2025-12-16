@@ -78,6 +78,7 @@ export function SupportChatAdmin() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [wsConnected, setWsConnected] = useState(false)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const convPollRef = useRef<NodeJS.Timeout | null>(null)
   const selectedIdRef = useRef<string | null>(null)
 
   // Global subscription: update list when ANY conversation receives a new message
@@ -141,24 +142,37 @@ export function SupportChatAdmin() {
     }
   }, [selectedConversation?.id])
 
+  // Polling định kỳ cho messages của cuộc trò chuyện đang chọn (kết hợp với WS)
   useEffect(() => {
     if (!selectedConversation) return
-    if (!wsConnected) {
-      if (pollRef.current) clearInterval(pollRef.current)
-      pollRef.current = setInterval(() => {
-        loadMessages()
-      }, 5000)
-    } else if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
+
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(() => {
+      loadMessages()
+    }, 7000)
+
     return () => {
       if (pollRef.current) {
         clearInterval(pollRef.current)
         pollRef.current = null
       }
     }
-  }, [wsConnected, selectedConversation?.id])
+  }, [selectedConversation?.id])
+
+  // Polling định kỳ cho danh sách conversations để luôn cập nhật preview/unread
+  useEffect(() => {
+    if (convPollRef.current) clearInterval(convPollRef.current)
+    convPollRef.current = setInterval(() => {
+      loadConversations()
+    }, 10000)
+
+    return () => {
+      if (convPollRef.current) {
+        clearInterval(convPollRef.current)
+        convPollRef.current = null
+      }
+    }
+  }, [statusFilter, page, limit])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -329,18 +343,6 @@ export function SupportChatAdmin() {
       setInput(messageContent)
     } finally {
       setIsSending(false)
-    }
-  }
-
-  const handleDeleteMessage = async (messageId: string) => {
-    if (!confirm('Xóa tin nhắn này?')) return
-    try {
-      const res = await fetch(`/api/support/messages/${messageId}`, { method: 'DELETE' })
-      const data = await res.json()
-      if (!data.success) throw new Error(data.error || 'Không thể xóa tin nhắn')
-      setMessages((prev: SupportMessage[]) => prev.filter((m) => m.id !== messageId))
-    } catch (err: any) {
-      toast({ title: 'Lỗi', description: err.message || 'Không thể xóa', variant: 'destructive' })
     }
   }
 
@@ -600,16 +602,6 @@ export function SupportChatAdmin() {
                             <p className={`text-xs mt-1 ${isAdmin ? 'text-blue-100' : 'text-gray-400'}`}>
                               {formatTime(message.created_at)}
                             </p>
-                          </div>
-                          {/* Delete button for admin */}
-                          <div className={`mt-1 ${isAdmin ? 'text-right' : 'text-left'}`}>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteMessage(message.id)}
-                              className="text-xs text-red-500 hover:underline"
-                            >
-                              Xóa
-                            </button>
                           </div>
                         </div>
                       </div>

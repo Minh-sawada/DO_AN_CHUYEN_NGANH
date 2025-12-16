@@ -9,7 +9,11 @@ import { useToast } from '@/hooks/use-toast'
 import { Upload, FileText, CheckCircle, XCircle, Loader2, Download } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 
-export function LawUpload() {
+interface LawUploadProps {
+  onUploadSuccess?: (result: any) => void
+}
+
+export function LawUpload({ onUploadSuccess }: LawUploadProps) {
   const { toast } = useToast()
   const [file, setFile] = useState<File | null>(null)
   const [customTitle, setCustomTitle] = useState<string>('')
@@ -98,6 +102,15 @@ export function LawUpload() {
       setCustomTitle('')
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
+      }
+
+      // Thông báo cho parent để refresh danh sách văn bản / thống kê
+      if (onUploadSuccess) {
+        try {
+          onUploadSuccess(result)
+        } catch (callbackError) {
+          console.error('Error in onUploadSuccess callback:', callbackError)
+        }
       }
 
     } catch (error: any) {

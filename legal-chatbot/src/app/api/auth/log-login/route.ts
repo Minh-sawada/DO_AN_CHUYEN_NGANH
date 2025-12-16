@@ -38,8 +38,20 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('log-login RPC error:', error)
+      // Log chi tiết lỗi để debug
+      console.error('RPC error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      })
       return NextResponse.json(
-        { success: false, error: 'Không ghi log được lần đăng nhập' },
+        { 
+          success: false, 
+          error: 'Không ghi log được lần đăng nhập',
+          errorDetails: error.message || 'Unknown error',
+          errorCode: error.code
+        },
         { status: 500 }
       )
     }

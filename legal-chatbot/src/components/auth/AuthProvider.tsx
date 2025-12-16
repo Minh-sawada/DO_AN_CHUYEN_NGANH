@@ -324,7 +324,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Reset login log flag
     hasLoggedLoginRef.current = false
     
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+    } finally {
+      // Đặt state về null ngay lập tức để tránh phải reload trang
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+      fetchingProfileRef.current = null
+      setLoading(false)
+    }
   }
 
   const refreshProfile = async () => {

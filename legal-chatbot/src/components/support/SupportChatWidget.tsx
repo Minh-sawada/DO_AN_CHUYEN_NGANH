@@ -76,25 +76,23 @@ export function SupportChatWidget() {
     }
   }, [conversation?.id, hidden])
 
-  // Polling fallback when WS not connected
+  // Polling định kỳ kết hợp với WS để đảm bảo đồng bộ ổn định
   useEffect(() => {
     if (hidden || !conversation) return
-    if (!wsConnected) {
-      if (pollRef.current) clearInterval(pollRef.current)
-      pollRef.current = setInterval(() => {
-        loadMessages()
-      }, 5000)
-    } else if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
+
+    // Luôn polling, bất kể WS có connect hay không (đã có dedupe ID)
+    if (pollRef.current) clearInterval(pollRef.current)
+    pollRef.current = setInterval(() => {
+      loadMessages()
+    }, 7000)
+
     return () => {
       if (pollRef.current) {
         clearInterval(pollRef.current)
         pollRef.current = null
       }
     }
-  }, [wsConnected, conversation?.id])
+  }, [conversation?.id, hidden])
 
   // Scroll to bottom khi có tin nhắn mới
   useEffect(() => {
