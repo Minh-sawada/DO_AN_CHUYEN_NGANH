@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -53,12 +54,37 @@ export function AdminPanel() {
   const [lawsPerPage, setLawsPerPage] = useState(20)
   const [totalLaws, setTotalLaws] = useState(0)
   const { toast } = useToast()
+  const router = useRouter()
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0)
 
   const [lawsLoading, setLawsLoading] = useState(false)
   const [statsLoading, setStatsLoading] = useState(false)
   
   // Dùng ref để tránh fetch lại data không cần thiết
   const dataFetchedRef = useRef(false)
+
+  const ensureSession = async (): Promise<any | null> => {
+    try {
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) {
+        console.error('Session error:', sessionError)
+      }
+
+      if (sessionData?.session) {
+        return sessionData.session
+      }
+
+      const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession()
+      if (refreshError) {
+        console.error('Refresh session error:', refreshError)
+      }
+
+      return refreshedData?.session ?? null
+    } catch (e) {
+      console.error('ensureSession error:', e)
+      return null
+    }
+  }
   
   const isAdmin = profile?.role === 'admin'
   const isEditor = profile?.role === 'editor'
@@ -108,21 +134,14 @@ export function AdminPanel() {
     try {
       setLawsLoading(true)
       
-      // Kiểm tra session trước
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-      
-      if (sessionError) {
-        console.error('Session error:', sessionError)
-        throw new Error(`Lỗi xác thực: ${sessionError.message}`)
-      }
-
+      const session = await ensureSession()
       if (!session) {
-        console.warn('No active session')
         toast({
           title: 'Cảnh báo',
-          description: 'Bạn cần đăng nhập để xem văn bản pháp luật',
+          description: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
           variant: 'destructive',
         })
+        router.push('/login')
         return
       }
 
@@ -130,7 +149,7 @@ export function AdminPanel() {
       const { data, error, count } = await supabase
         .from('laws')
         .select('id, _id, category, link, loai_van_ban, ngay_ban_hanh, ngay_hieu_luc, so_hieu, tinh_trang, title, tom_tat, created_at, updated_at', { count: 'exact' })
-        .order('created_at', { ascending: false })
+        .order('updated_at', { ascending: false })
 
       if (error) {
         console.error('Supabase error:', {
@@ -199,6 +218,17 @@ export function AdminPanel() {
   const fetchStats = async () => {
     try {
       setStatsLoading(true)
+
+      const session = await ensureSession()
+      if (!session) {
+        toast({
+          title: 'Cảnh báo',
+          description: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.',
+          variant: 'destructive',
+        })
+        router.push('/login')
+        return
+      }
       
       // Dùng cùng hàm get_law_stats như AdminDashboard để đảm bảo đồng bộ số liệu
       const { data, error } = await supabase.rpc('get_law_stats')
@@ -266,6 +296,9 @@ export function AdminPanel() {
       fetchLaws(),
       fetchStats()
     ])
+
+    // Trigger refresh cho dashboard (vì dashboard chỉ fetch 1 lần khi mount)
+    setDashboardRefreshKey((v) => v + 1)
   }
 
   return (
@@ -361,7 +394,7 @@ export function AdminPanel() {
         </TabsList>
 
       <TabsContent value="dashboard" className="space-y-4">
-        <AdminDashboard />
+        <AdminDashboard refreshKey={dashboardRefreshKey} />
       </TabsContent>
 
       <TabsContent value="upload" className="space-y-4">
@@ -603,7 +636,7 @@ export function AdminPanel() {
                               )}
                               <span className="flex items-center space-x-1">
                                 <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
-                                <span>{new Date(law.created_at).toLocaleDateString('vi-VN')}</span>
+                                <span>{new Date((law.updated_at || law.created_at) as any).toLocaleDateString('vi-VN')}</span>
                               </span>
                             </div>
                           </div>

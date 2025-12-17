@@ -37,6 +37,7 @@ interface DashboardLaw {
   so_hieu: string | null
   loai_van_ban: string | null
   created_at: string | null
+  updated_at: string | null
   noi_dung: string | null
   noi_dung_html: string | null
   embedding: null
@@ -68,7 +69,7 @@ interface TimeStats {
   monthly: Array<{ month: string; count: number }>
 }
 
-export function AdminDashboard() {
+export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
   const [stats, setStats] = useState<DashboardStats>({
     totalLaws: 0,
     totalQueries: 0,
@@ -106,6 +107,13 @@ export function AdminDashboard() {
     }
   }, []) // Empty dependency array - chỉ chạy 1 lần khi mount
 
+  useEffect(() => {
+    // Cho phép refresh lại dashboard sau khi upload/update luật
+    if (refreshKey !== undefined) {
+      fetchDashboardData()
+    }
+  }, [refreshKey])
+
   const fetchDashboardData = async () => {
     try {
       // Chỉ set loading nếu chưa có data
@@ -123,8 +131,8 @@ export function AdminDashboard() {
         // CHỈ select các field cần thiết, KHÔNG select noi_dung (quá lớn)
         supabase
           .from('laws')
-          .select('id, title, so_hieu, loai_van_ban, created_at')
-          .order('created_at', { ascending: false })
+          .select('id, title, so_hieu, loai_van_ban, created_at, updated_at')
+          .order('updated_at', { ascending: false })
           .limit(20), // Giảm xuống 20 records để dashboard load nhanh
         
         // Fetch stats
@@ -155,6 +163,7 @@ export function AdminDashboard() {
         so_hieu: law.so_hieu ?? null,
         loai_van_ban: law.loai_van_ban ?? null,
         created_at: law.created_at ?? null,
+        updated_at: law.updated_at ?? null,
         noi_dung: null,
         noi_dung_html: null,
         embedding: null
@@ -541,7 +550,7 @@ export function AdminDashboard() {
                               {law.title || law.so_hieu || 'Văn bản pháp luật'}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {law.created_at ? new Date(law.created_at).toLocaleDateString('vi-VN') : 'N/A'}
+                              {(law.updated_at || law.created_at) ? new Date(law.updated_at || law.created_at || '').toLocaleDateString('vi-VN') : 'N/A'}
                             </p>
                           </div>
                           <Badge variant="secondary" className="text-xs">
