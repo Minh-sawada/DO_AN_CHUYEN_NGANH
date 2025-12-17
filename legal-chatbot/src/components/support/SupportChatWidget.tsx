@@ -46,6 +46,7 @@ export function SupportChatWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const [wsConnected, setWsConnected] = useState(false)
   const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const lastMessagesSigRef = useRef<string>('')
 
   // Auto-load/create conversation ngay khi trang mở (kể cả khi widget đóng)
   useEffect(() => {
@@ -153,7 +154,12 @@ export function SupportChatWidget() {
       if (data.data) {
         // Ensure no duplicates from server responses
         const uniq = Array.from(new Map((data.data as SupportMessage[]).map(m => [m.id, m])).values())
-        setMessages(uniq)
+        const last = uniq.length ? (uniq[uniq.length - 1] as any) : null
+        const sig = `${uniq.length}:${last?.id ?? ''}:${last?.created_at ?? ''}`
+        if (sig !== lastMessagesSigRef.current) {
+          lastMessagesSigRef.current = sig
+          setMessages(uniq)
+        }
       }
     } catch (error) {
       console.error('Error loading messages:', error)

@@ -64,7 +64,7 @@ interface TimeStats {
     laws: number
     users: number
   }
-  hourly: Array<{ hour: number; count: number }>
+  hourly: Array<{ label: string; count: number }>
   daily: Array<{ date: string; count: number }>
   monthly: Array<{ month: string; count: number }>
 }
@@ -106,6 +106,13 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
       fetchDashboardData()
     }
   }, []) // Empty dependency array - chỉ chạy 1 lần khi mount
+
+  useEffect(() => {
+    // Load thống kê theo thời gian ngay khi mở dashboard (không cần bấm đổi tab)
+    if (!timeStatsLoaded && !timeStatsLoading) {
+      fetchTimeStats()
+    }
+  }, [])
 
   useEffect(() => {
     // Cho phép refresh lại dashboard sau khi upload/update luật
@@ -215,172 +222,17 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
       }
 
       setTimeStatsLoading(true)
-      const now = new Date()
-      const todayStart = new Date(now)
-      todayStart.setHours(0, 0, 0, 0)
-      
-      const weekStart = new Date(now)
-      weekStart.setDate(weekStart.getDate() - 7)
-      
-      const monthStart = new Date(now)
-      monthStart.setMonth(monthStart.getMonth() - 1)
-      
-      const yearStart = new Date(now)
-      yearStart.setFullYear(yearStart.getFullYear() - 1)
-
-      // Fetch queries by time - dùng chat_messages (role='user') thay cho query_logs
-      const [todayQueries, weekQueries, monthQueries, yearQueries, todayQueriesForHourly] = await Promise.all([
-        supabase
-          .from('chat_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'user')
-          .gte('created_at', todayStart.toISOString()),
-        supabase
-          .from('chat_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'user')
-          .gte('created_at', weekStart.toISOString()),
-        supabase
-          .from('chat_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'user')
-          .gte('created_at', monthStart.toISOString()),
-        supabase
-          .from('chat_messages')
-          .select('id', { count: 'exact', head: true })
-          .eq('role', 'user')
-          .gte('created_at', yearStart.toISOString()),
-        // CHỈ lấy truy vấn (user messages) của HÔM NAY cho biểu đồ theo giờ
-        supabase
-          .from('chat_messages')
-          .select('created_at')
-          .eq('role', 'user')
-          .gte('created_at', todayStart.toISOString())
-          .order('created_at', { ascending: false })
-      ])
-
-      // Fetch laws by time - chỉ count
-      const [todayLaws, weekLaws, monthLaws, yearLaws] = await Promise.all([
-        supabase.from('laws').select('id', { count: 'exact', head: true }).gte('created_at', todayStart.toISOString()),
-        supabase.from('laws').select('id', { count: 'exact', head: true }).gte('created_at', weekStart.toISOString()),
-        supabase.from('laws').select('id', { count: 'exact', head: true }).gte('created_at', monthStart.toISOString()),
-        supabase.from('laws').select('id', { count: 'exact', head: true }).gte('created_at', yearStart.toISOString())
-      ])
-
-      // Count unique users thực tế từ user_activities
-      const countUniqueUsers = async (startDate: Date): Promise<number> => {
-        try {
-          const { data, error } = await supabase
-            .from('user_activities')
-            .select('user_id')
-            .gte('created_at', startDate.toISOString())
-            .not('user_id', 'is', null)
-            .limit(10000) // Limit để tránh quá nhiều data
-          
-          if (error || !data) return 0
-          
-          const uniqueUserIds = new Set(data.map(q => q.user_id).filter(Boolean))
-          return uniqueUserIds.size
-        } catch (error) {
-          console.error('Error counting unique users:', error)
-          return 0
-        }
-      }
-
-      // Fetch unique users cho từng khoảng thời gian
-      const [todayUsers, weekUsers, monthUsers, yearUsers] = await Promise.all([
-        countUniqueUsers(todayStart),
-        countUniqueUsers(weekStart),
-        countUniqueUsers(monthStart),
-        countUniqueUsers(yearStart)
-      ])
-
-      // Process hourly data (CHỈ của HÔM NAY) dựa trên chat_messages (role='user')
-      const hourlyData: { [key: number]: number } = {}
-      if (todayQueriesForHourly.data) {
-        todayQueriesForHourly.data.forEach(q => {
-          const queryDate = new Date(q.created_at)
-          // Chỉ đếm nếu là hôm nay (kiểm tra lại để chắc chắn)
-          const queryDateStr = queryDate.toISOString().split('T')[0]
-          const todayStr = now.toISOString().split('T')[0]
-          
-          if (queryDateStr === todayStr) {
-            const hour = queryDate.getHours()
-            hourlyData[hour] = (hourlyData[hour] || 0) + 1
-          }
-        })
-      }
-      const hourly = Array.from({ length: 24 }, (_, i) => ({
-        hour: i,
-        count: hourlyData[i] || 0
-      }))
-
-      // Process daily data (last 30 days) - dùng chat_messages (role='user')
-      const dailyQueriesData = await supabase
-        .from('chat_messages')
-        .select('created_at')
-        .eq('role', 'user')
-        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString())
-        .limit(5000)
-      
-      const dailyData: { [key: string]: number } = {}
-      if (dailyQueriesData.data) {
-        dailyQueriesData.data.forEach(q => {
-          const date = new Date(q.created_at).toISOString().split('T')[0]
-          dailyData[date] = (dailyData[date] || 0) + 1
-        })
-      }
-      const daily = Object.entries(dailyData)
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .slice(-30)
-        .map(([date, count]) => ({ date, count }))
-
-      // Process monthly data (last 12 months) - dùng chat_messages (role='user')
-      const monthlyQueriesData = await supabase
-        .from('chat_messages')
-        .select('created_at')
-        .eq('role', 'user')
-        .gte('created_at', new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString())
-        .limit(10000)
-      
-      const monthlyData: { [key: string]: number } = {}
-      if (monthlyQueriesData.data) {
-        monthlyQueriesData.data.forEach(q => {
-          const date = new Date(q.created_at)
-          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
-          monthlyData[monthKey] = (monthlyData[monthKey] || 0) + 1
-        })
-      }
-      const monthly = Object.entries(monthlyData)
-        .sort((a, b) => a[0].localeCompare(b[0]))
-        .slice(-12)
-        .map(([month, count]) => ({ month, count }))
-
-      setTimeStats({
-        today: {
-          queries: todayQueries.count || 0,
-          laws: todayLaws.count || 0,
-          users: todayUsers
-        },
-        thisWeek: {
-          queries: weekQueries.count || 0,
-          laws: weekLaws.count || 0,
-          users: weekUsers
-        },
-        thisMonth: {
-          queries: monthQueries.count || 0,
-          laws: monthLaws.count || 0,
-          users: monthUsers
-        },
-        thisYear: {
-          queries: yearQueries.count || 0,
-          laws: yearLaws.count || 0,
-          users: yearUsers
-        },
-        hourly,
-        daily,
-        monthly
+      const { data: { session } } = await supabase.auth.getSession()
+      const token = session?.access_token
+      const res = await fetch('/api/admin/time-stats', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
       })
+      const json = await res.json()
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Failed to fetch time stats')
+      }
+
+      setTimeStats(json.timeStats)
       setTimeStatsLoaded(true)
     } catch (error) {
       console.error('Error fetching time stats:', error)
@@ -674,7 +526,7 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản cập nhật</p>
                         <p className="text-3xl font-bold text-green-700">{timeStats.today.laws}</p>
                       </div>
                       <FileText className="h-10 w-10 text-green-400" />
@@ -693,46 +545,6 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
                   </CardContent>
                 </Card>
               </div>
-
-              {/* Hourly Chart */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold">Theo giờ (24h qua)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {timeStats.hourly.map((item) => {
-                      const maxCount = Math.max(...timeStats.hourly.map(h => h.count), 1)
-                      const percentage = maxCount > 0 ? (item.count / maxCount) * 100 : 0
-                      return (
-                        <div key={item.hour} className="flex items-center gap-4">
-                          <span className="text-sm text-gray-600 w-16 font-medium">
-                            {String(item.hour).padStart(2, '0')}:00
-                          </span>
-                          <div className="flex-1">
-                            <div className="h-8 bg-gray-100 rounded-full overflow-hidden relative">
-                              {percentage > 0 ? (
-                                <div 
-                                  className="h-full bg-gradient-to-r from-blue-400 to-blue-500 rounded-full transition-all duration-300 flex items-center justify-end pr-3"
-                                  style={{ width: `${percentage}%` }}
-                                >
-                                  {item.count > 0 && (
-                                    <span className="text-xs text-white font-medium">
-                                      {item.count}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : (
-                                <div className="h-full w-full bg-gray-100 rounded-full" />
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
             </TabsContent>
 
             <TabsContent value="week" className="space-y-6 mt-4">
@@ -752,7 +564,7 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản cập nhật</p>
                         <p className="text-3xl font-bold text-green-700">{timeStats.thisWeek.laws}</p>
                       </div>
                       <FileText className="h-10 w-10 text-green-400" />
@@ -790,7 +602,7 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản cập nhật</p>
                         <p className="text-3xl font-bold text-green-700">{timeStats.thisMonth.laws}</p>
                       </div>
                       <FileText className="h-10 w-10 text-green-400" />
@@ -867,7 +679,7 @@ export function AdminDashboard({ refreshKey }: { refreshKey?: number }) {
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản mới</p>
+                        <p className="text-sm font-medium text-green-600 mb-1">Văn bản cập nhật</p>
                         <p className="text-3xl font-bold text-green-700">{timeStats.thisYear.laws}</p>
                       </div>
                       <FileText className="h-10 w-10 text-green-400" />
