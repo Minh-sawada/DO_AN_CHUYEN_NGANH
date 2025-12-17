@@ -616,7 +616,8 @@ export async function POST(req: NextRequest) {
         category: extractedFields.category,
         danh_sach_bang: null,
         link: null,
-        van_ban_duoc_dan: extractedFields.van_ban_duoc_dan
+        van_ban_duoc_dan: extractedFields.van_ban_duoc_dan,
+        updated_at: new Date().toISOString()
       }
 
       // Nếu đã có văn bản trùng số hiệu hoặc tiêu đề thì cập nhật thay vì tạo mới
@@ -752,7 +753,9 @@ export async function POST(req: NextRequest) {
           id: data.id,
           title: data.title,
           text_length: extractedText.length,
-          updated: isUpdate
+          updated: isUpdate,
+          created_at: data.created_at,
+          updated_at: data.updated_at
         }
       })
 

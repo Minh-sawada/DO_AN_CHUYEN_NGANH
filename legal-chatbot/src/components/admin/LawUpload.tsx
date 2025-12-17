@@ -107,7 +107,7 @@ export function LawUpload({ onUploadSuccess }: LawUploadProps) {
       // Thông báo cho parent để refresh danh sách văn bản / thống kê
       if (onUploadSuccess) {
         try {
-          onUploadSuccess(result)
+          await onUploadSuccess(result)
         } catch (callbackError) {
           console.error('Error in onUploadSuccess callback:', callbackError)
         }

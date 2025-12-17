@@ -80,6 +80,7 @@ export function SupportChatAdmin() {
   const pollRef = useRef<NodeJS.Timeout | null>(null)
   const convPollRef = useRef<NodeJS.Timeout | null>(null)
   const selectedIdRef = useRef<string | null>(null)
+  const lastMessagesSigRef = useRef<string>('')
 
   // Global subscription: update list when ANY conversation receives a new message
   useEffect(() => {
@@ -163,7 +164,7 @@ export function SupportChatAdmin() {
   useEffect(() => {
     if (convPollRef.current) clearInterval(convPollRef.current)
     convPollRef.current = setInterval(() => {
-      loadConversations()
+      loadConversations({ silent: true })
     }, 10000)
 
     return () => {
@@ -178,9 +179,11 @@ export function SupportChatAdmin() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const loadConversations = async () => {
+  const loadConversations = async (options?: { silent?: boolean }) => {
     try {
-      setIsLoading(true)
+      if (!options?.silent) {
+        setIsLoading(true)
+      }
       const params = new URLSearchParams()
       if (statusFilter !== 'all') params.set('status', statusFilter)
       params.set('limit', String(limit))
@@ -204,7 +207,9 @@ export function SupportChatAdmin() {
         variant: 'destructive'
       })
     } finally {
-      setIsLoading(false)
+      if (!options?.silent) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -218,7 +223,13 @@ export function SupportChatAdmin() {
       const data = await response.json()
       if (selectedIdRef.current !== convId) return
       if (data.data) {
-        setMessages(data.data)
+        const list = data.data as SupportMessage[]
+        const last = list.length ? (list[list.length - 1] as any) : null
+        const sig = `${list.length}:${last?.id ?? ''}:${last?.created_at ?? ''}`
+        if (sig !== lastMessagesSigRef.current) {
+          lastMessagesSigRef.current = sig
+          setMessages(list)
+        }
       }
     } catch (error) {
       console.error('Error loading messages:', error)

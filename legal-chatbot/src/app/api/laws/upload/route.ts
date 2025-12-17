@@ -221,9 +221,30 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Tìm các văn bản đã tồn tại theo tiêu đề để có thể update thay vì tạo mới
+    // Tìm các văn bản đã tồn tại theo số hiệu (ưu tiên) và tiêu đề để có thể update thay vì tạo mới
+    const uniqueSoHieu = Array.from(new Set(validatedLaws.map((l: any) => l.so_hieu).filter(Boolean)))
     const uniqueTitles = Array.from(new Set(validatedLaws.map((l: any) => l.title).filter(Boolean)))
-    const existingMap = new Map<string, string>()
+
+    const existingBySoHieu = new Map<string, string>()
+    const existingByTitle = new Map<string, string>()
+    const matchedExistingIds = new Set<string>()
+
+    if (uniqueSoHieu.length > 0) {
+      const { data: existingLaws, error: existingError } = await supabaseAdmin
+        .from('laws')
+        .select('id, so_hieu')
+        .in('so_hieu', uniqueSoHieu)
+
+      if (existingError) {
+        console.error('Error fetching existing laws for upsert by so_hieu:', existingError)
+      } else if (existingLaws) {
+        for (const law of existingLaws as any[]) {
+          if (law.so_hieu && law.id) {
+            existingBySoHieu.set(law.so_hieu, law.id)
+          }
+        }
+      }
+    }
 
     if (uniqueTitles.length > 0) {
       const { data: existingLaws, error: existingError } = await supabaseAdmin
@@ -236,18 +257,21 @@ export async function POST(req: NextRequest) {
       } else if (existingLaws) {
         for (const law of existingLaws as any[]) {
           if (law.title && law.id) {
-            // Nếu có nhiều bản trùng title, ưu tiên bản mới nhất (id cuối cùng sẽ ghi đè)
-            existingMap.set(law.title, law.id)
+            existingByTitle.set(law.title, law.id)
           }
         }
       }
     }
 
-    // Gán id cũ cho các văn bản trùng title để upsert cập nhật thay vì tạo mới
+    // Gán id cũ để upsert cập nhật thay vì tạo mới (ưu tiên so_hieu)
     validatedLaws.forEach((law: any) => {
-      const existingId = law.title ? existingMap.get(law.title) : undefined
+      const existingId =
+        (law.so_hieu ? existingBySoHieu.get(law.so_hieu) : undefined) ||
+        (law.title ? existingByTitle.get(law.title) : undefined)
+
       if (existingId) {
         law.id = existingId
+        matchedExistingIds.add(existingId)
       }
     })
 
@@ -270,9 +294,9 @@ export async function POST(req: NextRequest) {
         failed += batch.length
         errors.push(`Batch ${i / batchSize + 1}: ${error.message}`)
       } else if (data) {
-        // Ước lượng inserted vs updated dựa trên việc có id cũ hay không
+        // Ước lượng inserted vs updated dựa trên việc có match existing id hay không
         for (const row of data as any[]) {
-          if (row.id && existingMap.has(row.title)) {
+          if (row.id && matchedExistingIds.has(String(row.id))) {
             updated += 1
           } else {
             inserted += 1
